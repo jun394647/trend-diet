@@ -1,32 +1,50 @@
-# React + TypeScript + Vite
+# 추세 다이어트
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+체중과 섭취 칼로리만 기록하면, 체중 추세로 실제 소비 칼로리를 추정해 목표 칼로리를 매주 맞춰 주는 개인용 다이어트 기록 앱입니다.
 
-Currently, two official plugins are available:
+- 서버와 로그인이 없습니다. 모든 기록은 이 기기의 브라우저(IndexedDB)에만 저장됩니다.
+- 홈 화면에 설치해 앱처럼 쓸 수 있고, 오프라인에서도 동작합니다.
+- 표시되는 수치는 추정치이며 의학적 조언이 아닙니다.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 기능
 
-## React Compiler
+| 화면 | 하는 일 |
+|---|---|
+| 온보딩 | 키·체중·활동량·목표를 받아 첫 목표 칼로리를 계산합니다. |
+| 오늘 | 체중 입력, 남은 칼로리, 식사 추가(직접 입력 / 즐겨찾기 / 대충 입력), 연속 기록 일수 |
+| 추세 | 실측 체중과 추세선, 기간별 변화, 목표 도달 예상일 |
+| 주간 체크인 | 최근 기록으로 소비 칼로리를 다시 추정하고 새 목표를 제안합니다. |
+| 설정 | 프로필 수정, 백업 내보내기/가져오기, 초기화 |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 계산 방식
 
-## Expanding the Oxlint configuration
+- **추세 체중**: 지수이동평균입니다. 하루에 실측값과의 차이의 10%만 따라가고, 기록이 빠진 날은 간격만큼 보정합니다. (`src/lib/trend.ts`)
+- **초기 소비 칼로리**: Mifflin-St Jeor 기초대사량 × 활동 계수
+- **적응형 소비 칼로리**: 최근 21일 기준 `평균 섭취 − (추세 체중 변화 × 7700 ÷ 일수)`. 식사 기록 10일 이상, 체중 기록 5회 이상일 때만 계산하고, 새 값은 30%만 반영합니다. 식사 기록이 없는 날은 평균에서 제외합니다. (`src/lib/tdee.ts`)
+- **목표 칼로리**: `소비 칼로리 − (주당 감량 kg × 7700 ÷ 7)`. 감량 속도는 주당 체중의 1% 이하, 목표는 여성 1,200 / 남성 1,500kcal 이상으로 제한합니다.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## 개발
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev      # 개발 서버
+npm test         # 단위·화면 테스트
+npm run build    # dist/ 에 빌드
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+`main` 브랜치에 푸시하면 GitHub Actions가 테스트와 빌드를 거쳐 GitHub Pages에 배포합니다.
+
+## 구조
+
+```
+src/
+  lib/          순수 계산 함수 (추세, 소비 칼로리, 계획, 날짜)
+  storage.ts    저장 계층. 화면은 Dexie를 직접 쓰지 않습니다.
+  store.ts      zustand 상태와 동작
+  pages/        화면
+  components/   화면에서 쓰는 조각
+```
+
+## 데이터 백업
+
+데이터가 기기 한 대에만 있으므로, 설정 화면에서 주기적으로 백업 파일을 내보내세요. 브라우저 데이터를 지우거나 기기를 바꾸면 기록이 사라집니다.

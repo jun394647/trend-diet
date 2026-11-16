@@ -1,0 +1,44 @@
+.weight-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.weight-input-wrap {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.weight-input-wrap .input {
+  padding-right: 40px;
+}
+
+.weight-input-wrap .weight-suffix {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-2);
+  font-size: 0.875rem;
+  pointer-events: none;
+}
+
+.weight-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.weight-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.weight-actions .btn {
+  flex: 1 1 0;
+  padding: 0 10px;
+}

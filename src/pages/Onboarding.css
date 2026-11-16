@@ -1,0 +1,87 @@
+.ob {
+  min-height: 100dvh;
+  gap: 20px;
+}
+
+.ob-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.ob-progress {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+}
+
+.ob-dot {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.ob-dot--on {
+  background: var(--accent);
+}
+
+.ob-title {
+  font-size: 1.5rem;
+  outline: none;
+  word-break: keep-all;
+}
+
+.ob-body {
+  flex: 1;
+}
+
+.ob-lead {
+  font-size: 1.0625rem;
+  word-break: keep-all;
+}
+
+.ob-desc {
+  margin-bottom: 16px;
+  word-break: keep-all;
+}
+
+.ob .banner {
+  display: block;
+  word-break: keep-all;
+}
+
+.ob-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ob-result .card-title {
+  margin-bottom: 0;
+}
+
+.ob-unit {
+  margin-left: 4px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0;
+}
+
+.ob-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  margin: 0 calc(var(--gutter) * -1);
+  padding: 12px var(--gutter) calc(env(safe-area-inset-bottom) + 12px);
+  margin-bottom: calc((env(safe-area-inset-bottom) + 24px) * -1);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+.ob-next {
+  flex: 1;
+}

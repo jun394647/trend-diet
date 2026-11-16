@@ -158,6 +158,8 @@ select {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  text-decoration: none;
+  color: var(--text);
 }
 
 .btn:disabled {
@@ -254,7 +256,7 @@ select {
   appearance: none;
   border: 0;
   background: transparent;
-  min-height: 36px;
+  min-height: 44px;
   border-radius: 8px;
   font-weight: 600;
   color: var(--text-2);

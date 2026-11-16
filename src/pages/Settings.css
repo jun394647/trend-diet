@@ -1,0 +1,42 @@
+.st-card-title {
+  margin-bottom: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.st .small {
+  word-break: keep-all;
+}
+
+.st-notice {
+  display: block;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 파일 선택 칸은 버튼으로 열기 때문에 화면에서는 숨긴다. */
+.st-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.st-notes {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.st-notes ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--text-2);
+}

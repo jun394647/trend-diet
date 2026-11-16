@@ -1,0 +1,96 @@
+.today-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.today-head .page-title {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.today-jump {
+  display: flex;
+  justify-content: center;
+  margin-top: -6px;
+}
+
+.today-jump .btn {
+  color: var(--accent);
+}
+
+.banner .btn {
+  flex: 0 0 auto;
+  text-decoration: none;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.kcal-hero--over {
+  color: var(--warn);
+}
+
+.kcal-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin: 12px 0 8px;
+}
+
+.kcal-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.kcal-bar-fill--over {
+  background: var(--warn);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kcal-bar-fill {
+    transition: none;
+  }
+}
+
+.streak {
+  text-align: center;
+}
+
+.meal-list > li {
+  padding: 2px 0;
+  min-height: 48px;
+}
+
+.meal-name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.meal-kcal {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.meals-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.meals-head .card-title {
+  margin-bottom: 4px;
+}
+
+.add-meal {
+  min-height: 52px;
+  font-size: 1.0625rem;
+}

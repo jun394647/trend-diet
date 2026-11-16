@@ -1,0 +1,92 @@
+.checkin-page .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.checkin-link {
+  text-decoration: none;
+}
+
+.checkin-note {
+  display: block;
+  margin: 0;
+}
+
+.checkin-stats > li {
+  min-height: 44px;
+  font-size: 0.9375rem;
+}
+
+.checkin-value {
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.checkin-sub {
+  display: block;
+}
+
+.checkin-foot {
+  margin-top: 8px;
+}
+
+.checkin-change {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.checkin-new {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.checkin-arrow {
+  color: var(--text-2);
+}
+
+.checkin-explain {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+p.checkin-explain {
+  display: block;
+}
+
+.checkin-needs > li {
+  padding: 8px 0;
+}
+
+.checkin-needs > li:first-child {
+  border-top: 1px solid var(--border);
+}
+
+.checkin-hero {
+  margin: 4px 0;
+  color: var(--accent);
+}
+
+.checkin-unit {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-left: 4px;
+  letter-spacing: 0;
+}
+
+.checkin-actions-note {
+  text-align: center;
+}

@@ -64,7 +64,7 @@ const isDate = (v: unknown): v is string => isStr(v) && /^\d{4}-\d{2}-\d{2}$/.te
 /** 백업 파일 내용을 검증한다. 형식이 맞지 않으면 사유를 담아 예외를 던진다. */
 export function parseBackup(raw: unknown): BackupFile {
   const fail = (why: string): never => {
-    throw new Error(`백업 파일 형식이 올바르지 않습니다: ${why}`)
+    throw new Error(`백업 파일 형식이 올바르지 않아요: ${why}`)
   }
   if (typeof raw !== 'object' || raw === null) fail('객체가 아님')
   const o = raw as Record<string, unknown>

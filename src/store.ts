@@ -183,7 +183,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       raw = JSON.parse(text)
     } catch {
-      throw new Error('백업 파일을 읽을 수 없습니다: JSON 형식이 아님')
+      throw new Error('백업 파일을 읽을 수 없어요: JSON 형식이 아니에요')
     }
     const backup = storage.parseBackup(raw)
     await storage.restoreBackup(backup)

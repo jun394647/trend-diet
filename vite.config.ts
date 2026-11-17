@@ -37,5 +37,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
     globals: true,
+    // 테스트는 실제 서버에 붙지 않는다. .env.local이 있어도 계정 기능을 끈 상태로 돌린다.
+    env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' },
   },
 })

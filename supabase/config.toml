@@ -1,0 +1,11 @@
+# 호스팅된 Supabase 프로젝트에 반영할 설정만 적는다. 적지 않은 항목은 서버 기본값을 그대로 둔다.
+# 반영: npx supabase config push
+project_id = "trend-diet"
+
+[auth]
+site_url = "https://trend-diet.vercel.app"
+additional_redirect_urls = ["http://localhost:5173"]
+
+[auth.email]
+# 개인용 앱이라 메일 확인 없이 가입 즉시 로그인되게 한다.
+enable_confirmations = false

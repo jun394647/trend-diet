@@ -21,7 +21,7 @@ export interface WeightEntry {
   kg: number
 }
 
-export type MealSource = 'exact' | 'favorite' | 'rough'
+export type MealSource = 'exact' | 'favorite' | 'rough' | 'search'
 
 export interface MealEntry {
   id: string

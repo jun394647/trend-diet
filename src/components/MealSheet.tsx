@@ -6,14 +6,16 @@ import type { RoughSize } from '../lib/selectors'
 import { useStore } from '../store'
 import type { DateStr } from '../types'
 import { fmtKcal } from './today/format'
+import FoodSearch from './FoodSearch'
 import { TrashIcon } from './today/icons'
 import './today/shared.css'
 import './MealSheet.css'
 
-type Mode = 'exact' | 'favorite' | 'rough'
+type Mode = 'search' | 'exact' | 'favorite' | 'rough'
 
 const MODES: { id: Mode; label: string }[] = [
   { id: 'favorite', label: '즐겨찾기' },
+  { id: 'search', label: '검색' },
   { id: 'exact', label: '직접 입력' },
   { id: 'rough', label: '대충 입력' },
 ]
@@ -180,6 +182,18 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
             </button>
           ))}
         </div>
+
+        {mode === 'search' && (
+          <FoodSearch
+            busy={busy}
+            onLog={(meal, saveFavorite) =>
+              void run(async () => {
+                await addMeal({ date, kcal: meal.kcal, name: meal.name, source: 'search' })
+                if (saveFavorite) await addFavorite(meal.name, meal.kcal)
+              })
+            }
+          />
+        )}
 
         {mode === 'exact' && (
           <form className="stack" onSubmit={onSubmitExact} noValidate>

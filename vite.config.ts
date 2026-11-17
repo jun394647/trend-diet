@@ -9,6 +9,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        // 음식 DB(food-db.json)도 미리 받아 두어 오프라인에서 검색할 수 있게 한다.
+        globPatterns: ['**/*.{js,css,html,svg,png,json,webmanifest}'],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: '추세 다이어트',

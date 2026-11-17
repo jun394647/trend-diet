@@ -40,7 +40,7 @@ npm test         # 단위·화면 테스트
 npm run build    # dist/ 에 빌드
 ```
 
-`main` 브랜치에 푸시하면 GitHub Actions가 테스트와 빌드를 거쳐 GitHub Pages에 배포합니다.
+`main` 브랜치에 푸시하면 Vercel이 빌드해서 https://trend-diet.vercel.app 에 배포합니다.
 
 ## 구조
 

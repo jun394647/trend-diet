@@ -13,6 +13,8 @@ import { buildInitialCheckin } from '../lib/plan'
 import { KCAL_PER_KG, computeTarget, projectGoalDate } from '../lib/tdee'
 import { useStore } from '../store'
 import type { Profile } from '../types'
+import { AccountAuth } from '../components/AccountPanel'
+import { useSync } from '../sync/store'
 import './Onboarding.css'
 
 const STEPS = ['welcome', 'body', 'activity', 'goal', 'result'] as const
@@ -49,6 +51,10 @@ function buildProfile(draft: ProfileDraft): Profile {
 
 export default function Onboarding() {
   const [stepIndex, setStepIndex] = useState(0)
+  const [showLogin, setShowLogin] = useState(false)
+  const syncEnabled = useSync((s) => s.enabled)
+  const syncEmail = useSync((s) => s.email)
+  const syncConflict = useSync((s) => s.conflict)
   const [draft, setDraft] = useState<ProfileDraft>(emptyDraft)
   const [attempted, setAttempted] = useState<Partial<Record<Step, boolean>>>({})
   const [saving, setSaving] = useState(false)
@@ -130,8 +136,28 @@ export default function Onboarding() {
             매일 체중과 먹은 칼로리를 기록하면, 들쭉날쭉한 체중을 추세선으로 다듬어 보여 주고 내 몸이
             실제로 쓰는 칼로리를 계산해 매주 알맞은 목표 칼로리를 알려 줘요.
           </p>
-          <p className="banner">기록은 이 기기에만 저장돼요. 가입이나 로그인은 필요 없어요.</p>
+          {syncEnabled ? (
+            <p className="banner">
+              기록은 이 기기에 저장돼요. 로그인하면 계정에도 저장돼서 다른 기기에서 이어 쓸 수 있어요.
+            </p>
+          ) : (
+            <p className="banner">기록은 이 기기에만 저장돼요. 가입이나 로그인은 필요 없어요.</p>
+          )}
           <p className="muted small">시작하기 전에 몇 가지만 여쭤볼게요. 1분이면 끝나요.</p>
+          {syncEnabled &&
+            (syncEmail && !syncConflict ? (
+              <p className="small muted" role="status">
+                {syncEmail}(으)로 로그인했어요. 이 계정에는 아직 기록이 없으니 이어서 진행해 주세요.
+              </p>
+            ) : showLogin || syncConflict ? (
+              <div className="card">
+                <AccountAuth />
+              </div>
+            ) : (
+              <button type="button" className="btn btn--block" onClick={() => setShowLogin(true)}>
+                쓰던 계정으로 로그인하기
+              </button>
+            ))}
         </section>
       )}
 

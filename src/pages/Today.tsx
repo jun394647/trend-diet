@@ -10,6 +10,7 @@ import { currentPlan } from '../lib/plan'
 import { isBackupDue, isCheckinDue, kcalOn, mealsOn, streak } from '../lib/selectors'
 import { useStore } from '../store'
 import type { DateStr, MealEntry } from '../types'
+import { useSync } from '../sync/store'
 import './Today.css'
 
 function mealLabel(m: MealEntry): string {
@@ -22,6 +23,8 @@ export default function Today() {
   const meals = useStore((s) => s.meals)
   const checkins = useStore((s) => s.checkins)
   const lastBackupAt = useStore((s) => s.lastBackupAt)
+  // 계정에 동기화 중이면 백업 파일을 따로 권하지 않는다.
+  const synced = useSync((s) => s.email !== null && s.conflict === null)
   const removeMeal = useStore((s) => s.removeMeal)
 
   const todayStr = today()
@@ -103,7 +106,7 @@ export default function Today() {
         </div>
       )}
 
-      {isToday && backupDue && (
+      {isToday && backupDue && !synced && (
         <div className="banner banner--warn">
           <span>기록은 이 기기에만 있어요. 백업 파일을 받아 두세요.</span>
           <Link className="btn" to="/settings">

@@ -1,8 +1,9 @@
 /**
  * 저장 계층. 화면과 스토어는 Dexie를 직접 만지지 않고 이 모듈만 쓴다.
- * 나중에 서버 동기화를 붙일 때 이 파일만 바꾸면 되도록 하기 위함이다.
+ * 모든 쓰기는 같은 트랜잭션 안에서 outbox에 "이 레코드가 바뀌었다"는 표시를 남기고,
+ * 동기화 엔진(src/sync/engine.ts)이 그 표시를 보고 서버에 올린다.
  */
-import { db, KV_LAST_BACKUP, KV_PROFILE } from './db'
+import { db, KV_LAST_BACKUP, KV_PROFILE, type RecordKind } from './db'
 import type { BackupFile, Checkin, Favorite, MealEntry, Profile, WeightEntry } from './types'
 
 export interface Snapshot {
@@ -12,6 +13,32 @@ export interface Snapshot {
   favorites: Favorite[]
   checkins: Checkin[]
   lastBackupAt: string | null
+}
+
+const DATA_TABLES = [db.weights, db.meals, db.favorites, db.checkins, db.kv, db.outbox]
+
+let rev = 0
+const nextRev = () => Date.now() * 1000 + (rev++ % 1000)
+
+const listeners = new Set<() => void>()
+/** 기기 안의 기록이 바뀔 때마다 불린다. 해제 함수를 돌려준다. */
+export function onLocalChange(cb: () => void): () => void {
+  listeners.add(cb)
+  return () => listeners.delete(cb)
+}
+const notify = () => listeners.forEach((cb) => cb())
+
+type Mark = [RecordKind, string]
+const mark = (marks: Mark[]) =>
+  db.outbox.bulkPut(marks.map(([kind, key]) => ({ kind, key, rev: nextRev() })))
+
+/** 쓰기와 outbox 표시를 한 트랜잭션으로 묶는다. */
+async function write(marks: Mark[], fn: () => Promise<unknown>): Promise<void> {
+  await db.transaction('rw', DATA_TABLES, async () => {
+    await fn()
+    await mark(marks)
+  })
+  notify()
 }
 
 export async function loadAll(): Promise<Snapshot> {
@@ -33,15 +60,44 @@ export async function loadAll(): Promise<Snapshot> {
   }
 }
 
-export const saveProfile = (p: Profile) => db.kv.put({ key: KV_PROFILE, value: p })
-export const putWeight = (w: WeightEntry) => db.weights.put(w)
-export const deleteWeight = (date: string) => db.weights.delete(date)
-export const putMeal = (m: MealEntry) => db.meals.put(m)
-export const deleteMeal = (id: string) => db.meals.delete(id)
-export const putFavorite = (f: Favorite) => db.favorites.put(f)
-export const deleteFavorite = (id: string) => db.favorites.delete(id)
-export const putCheckin = (c: Checkin) => db.checkins.put(c)
+export const saveProfile = (p: Profile) =>
+  write([['profile', 'profile']], () => db.kv.put({ key: KV_PROFILE, value: p }))
+export const putWeight = (w: WeightEntry) => write([['weight', w.date]], () => db.weights.put(w))
+export const deleteWeight = (date: string) => write([['weight', date]], () => db.weights.delete(date))
+export const putMeal = (m: MealEntry) => write([['meal', m.id]], () => db.meals.put(m))
+export const deleteMeal = (id: string) => write([['meal', id]], () => db.meals.delete(id))
+export const putFavorite = (f: Favorite) => write([['favorite', f.id]], () => db.favorites.put(f))
+export const deleteFavorite = (id: string) => write([['favorite', id]], () => db.favorites.delete(id))
+export const putCheckin = (c: Checkin) => write([['checkin', c.date]], () => db.checkins.put(c))
 export const setLastBackupAt = (iso: string) => db.kv.put({ key: KV_LAST_BACKUP, value: iso })
+
+/** 기기에 있는 모든 레코드의 (종류, 키) 목록. */
+export async function allRecordKeys(): Promise<Mark[]> {
+  const [profile, weights, meals, favorites, checkins] = await Promise.all([
+    db.kv.get(KV_PROFILE),
+    db.weights.toCollection().primaryKeys(),
+    db.meals.toCollection().primaryKeys(),
+    db.favorites.toCollection().primaryKeys(),
+    db.checkins.toCollection().primaryKeys(),
+  ])
+  return [
+    ...(profile ? ([['profile', 'profile']] as Mark[]) : []),
+    ...weights.map((k): Mark => ['weight', k]),
+    ...meals.map((k): Mark => ['meal', k]),
+    ...favorites.map((k): Mark => ['favorite', k]),
+    ...checkins.map((k): Mark => ['checkin', k]),
+  ]
+}
+
+async function clearRecords(): Promise<void> {
+  await Promise.all([
+    db.weights.clear(),
+    db.meals.clear(),
+    db.favorites.clear(),
+    db.checkins.clear(),
+    db.kv.delete(KV_PROFILE),
+  ])
+}
 
 export async function exportBackup(): Promise<BackupFile> {
   const s = await loadAll()
@@ -97,32 +153,31 @@ export function parseBackup(raw: unknown): BackupFile {
   }
 }
 
-/** 기존 데이터를 모두 지우고 백업 내용으로 교체한다. */
+/**
+ * 기존 기록을 모두 지우고 백업 내용으로 교체한다.
+ * 지워진 것과 새로 들어온 것 모두 outbox에 표시해 서버에도 같은 교체가 반영되게 한다.
+ */
 export async function restoreBackup(b: BackupFile): Promise<void> {
-  await db.transaction('rw', [db.weights, db.meals, db.favorites, db.checkins, db.kv], async () => {
-    await Promise.all([
-      db.weights.clear(),
-      db.meals.clear(),
-      db.favorites.clear(),
-      db.checkins.clear(),
-      db.kv.clear(),
-    ])
+  await db.transaction('rw', DATA_TABLES, async () => {
+    await mark(await allRecordKeys())
+    await clearRecords()
+    await db.kv.delete(KV_LAST_BACKUP)
     await db.weights.bulkPut(b.weights)
     await db.meals.bulkPut(b.meals)
     await db.favorites.bulkPut(b.favorites)
     await db.checkins.bulkPut(b.checkins)
     if (b.profile) await db.kv.put({ key: KV_PROFILE, value: b.profile })
+    await mark(await allRecordKeys())
   })
+  notify()
 }
 
+/** 기록을 모두 지운다. 계정에 연결돼 있으면 다음 동기화 때 서버에서도 지워진다. */
 export async function wipeAll(): Promise<void> {
-  await db.transaction('rw', [db.weights, db.meals, db.favorites, db.checkins, db.kv], async () => {
-    await Promise.all([
-      db.weights.clear(),
-      db.meals.clear(),
-      db.favorites.clear(),
-      db.checkins.clear(),
-      db.kv.clear(),
-    ])
+  await db.transaction('rw', DATA_TABLES, async () => {
+    await mark(await allRecordKeys())
+    await clearRecords()
+    await db.kv.delete(KV_LAST_BACKUP)
   })
+  notify()
 }

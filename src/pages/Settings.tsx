@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type ChangeEvent } from 'react'
+import AccountPanel from '../components/AccountPanel'
 import ProfileForm, {
   draftFromProfile,
   draftToProfileFields,
@@ -8,6 +9,7 @@ import ProfileForm, {
 import { parseDate, today } from '../lib/date'
 import { currentPlan } from '../lib/plan'
 import { useStore } from '../store'
+import { useSync } from '../sync/store'
 import type { Profile } from '../types'
 import './Settings.css'
 
@@ -134,6 +136,7 @@ function ProfileCard({ profile }: { profile: Profile }) {
 export default function Settings() {
   const profile = useStore((s) => s.profile)
   const lastBackupAt = useStore((s) => s.lastBackupAt)
+  const synced = useSync((s) => s.email !== null && s.conflict === null)
   const [backupNotice, setBackupNotice] = useState<Notice | null>(null)
   const [resetNotice, setResetNotice] = useState<Notice | null>(null)
   const [busy, setBusy] = useState(false)
@@ -167,7 +170,9 @@ export default function Settings() {
     try {
       const text = await readFileText(file)
       const ok = window.confirm(
-        '지금 이 기기에 있는 기록을 모두 지우고 백업 파일의 내용으로 바꿔요. 계속할까요?',
+        synced
+          ? '이 기기와 계정에 있는 기록을 모두 지우고 백업 파일의 내용으로 바꿔요. 계속할까요?'
+          : '지금 이 기기에 있는 기록을 모두 지우고 백업 파일의 내용으로 바꿔요. 계속할까요?',
       )
       if (!ok) return
       await useStore.getState().importBackup(text)
@@ -185,7 +190,9 @@ export default function Settings() {
 
   const handleReset = async () => {
     const ok = window.confirm(
-      '체중, 식사 기록과 내 정보를 모두 삭제해요. 삭제하면 되돌릴 수 없으니 먼저 백업 파일을 내보내는 것을 권해요. 정말 삭제할까요?',
+      synced
+        ? '체중, 식사 기록과 내 정보를 이 기기와 계정에서 모두 삭제해요. 다른 기기에서도 사라지고 되돌릴 수 없으니 먼저 백업 파일을 내보내는 것을 권해요. 정말 삭제할까요?'
+        : '체중, 식사 기록과 내 정보를 모두 삭제해요. 삭제하면 되돌릴 수 없으니 먼저 백업 파일을 내보내는 것을 권해요. 정말 삭제할까요?',
     )
     if (!ok) return
     setResetNotice(null)
@@ -204,6 +211,8 @@ export default function Settings() {
     <main className="page st">
       <h1 className="page-title">설정</h1>
 
+      <AccountPanel />
+
       {profile && <ProfileCard key={profileVersion} profile={profile} />}
 
       <section className="card stack" aria-labelledby="st-backup-title">
@@ -211,8 +220,9 @@ export default function Settings() {
           백업
         </h2>
         <p className="small">
-          기록은 이 기기에만 있어서 브라우저 데이터를 지우거나 기기를 바꾸면 사라져요. 가끔 백업
-          파일로 내보내 두세요.
+          {synced
+            ? '기록은 계정에도 저장되고 있어요. 따로 보관하고 싶을 때 백업 파일로 내보낼 수 있어요.'
+            : '기록은 이 기기에만 있어서 브라우저 데이터를 지우거나 기기를 바꾸면 사라져요. 가끔 백업 파일로 내보내 두세요.'}
         </p>
         <p className="muted small" data-testid="last-backup">
           {lastBackupAt ? `마지막 백업: ${formatDateTime(lastBackupAt)}` : '아직 백업한 적이 없어요.'}
@@ -251,8 +261,8 @@ export default function Settings() {
           초기화
         </h2>
         <p className="small">
-          체중, 식사 기록과 내 정보를 모두 지우고 처음 상태로 돌아가요. 삭제한 뒤에는 되돌릴 수
-          없어요.
+          체중, 식사 기록과 내 정보를 모두 지우고 처음 상태로 돌아가요.
+          {synced && ' 계정에 저장된 기록도 함께 지워져요.'} 삭제한 뒤에는 되돌릴 수 없어요.
         </p>
         <NoticeBanner notice={resetNotice} />
         <button
@@ -270,7 +280,11 @@ export default function Settings() {
           앱 정보
         </h2>
         <ul className="st-notes small">
-          <li>기록은 이 기기의 이 브라우저에만 저장돼요. 서버로 보내지 않고, 다른 기기와 자동으로 맞춰지지도 않아요.</li>
+          <li>
+            {synced
+              ? '기록은 이 기기에 먼저 저장되고, 인터넷에 연결되면 계정에도 저장돼요. 오프라인에서 적은 기록은 연결됐을 때 올라가요.'
+              : '기록은 이 기기의 이 브라우저에만 저장돼요. 로그인하지 않으면 서버로 보내지 않고, 다른 기기와 자동으로 맞춰지지도 않아요.'}
+          </li>
           <li>
             홈 화면에 추가하면 앱처럼 쓸 수 있어요.
             <ul>

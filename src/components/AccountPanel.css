@@ -1,0 +1,10 @@
+.acc-email {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.acc-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}

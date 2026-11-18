@@ -4,13 +4,16 @@ import MealSheet from '../components/MealSheet'
 import WeightCard from '../components/WeightCard'
 import { fmtKcal } from '../components/today/format'
 import { ChevronLeft, ChevronRight, TrashIcon } from '../components/today/icons'
+import IntakeGauge from '../components/today/IntakeGauge'
 import '../components/today/shared.css'
-import { addDays, formatKorean, today } from '../lib/date'
+import WeekStrip from '../components/today/WeekStrip'
+import { addDays, formatKorean, formatShort, today } from '../lib/date'
 import { currentPlan } from '../lib/plan'
-import { isBackupDue, isCheckinDue, kcalOn, mealsOn, streak } from '../lib/selectors'
+import { isBackupDue, isCheckinDue, kcalOn, mealsOn } from '../lib/selectors'
+import { intakeState, phaseOf, targetRange, weekOfPhase, weekStart, weekSummary } from '../lib/sustain'
 import { useStore } from '../store'
-import type { DateStr, MealEntry } from '../types'
 import { useSync } from '../sync/store'
+import type { DateStr, MealEntry } from '../types'
 import './Today.css'
 
 function mealLabel(m: MealEntry): string {
@@ -19,6 +22,7 @@ function mealLabel(m: MealEntry): string {
 }
 
 export default function Today() {
+  const profile = useStore((s) => s.profile)
   const weights = useStore((s) => s.weights)
   const meals = useStore((s) => s.meals)
   const checkins = useStore((s) => s.checkins)
@@ -38,7 +42,6 @@ export default function Today() {
   const plan = useMemo(() => currentPlan(checkins), [checkins])
   const dayMeals = useMemo(() => mealsOn(meals, date), [meals, date])
   const eaten = useMemo(() => kcalOn(meals, date), [meals, date])
-  const streakDays = useMemo(() => streak(weights, meals, todayStr), [weights, meals, todayStr])
   const checkinDue = useMemo(() => isCheckinDue(checkins, todayStr), [checkins, todayStr])
   const backupDue = useMemo(
     () => isBackupDue(lastBackupAt, weights.length + meals.length > 0, new Date()),
@@ -46,9 +49,16 @@ export default function Today() {
   )
 
   const target = plan?.targetKcal ?? 0
-  const remaining = target - eaten
-  const over = plan !== null && remaining < 0
-  const pct = target > 0 ? Math.min(100, Math.round((eaten / target) * 100)) : 0
+  const range = targetRange(target)
+  const state = intakeState(eaten, target)
+  // 보고 있는 날이 속한 주. 이번 주라면 오늘까지만 센다.
+  const week = useMemo(() => {
+    const end = addDays(weekStart(date), 6)
+    return weekSummary({ meals, weights, targetKcal: target, asOf: end > todayStr ? todayStr : end })
+  }, [meals, weights, target, date, todayStr])
+  const isThisWeek = weekStart(date) === weekStart(todayStr)
+  const maintaining = profile !== null && phaseOf(profile) === 'maintain'
+  const rangeName = maintaining ? '유지 범위' : '목표 범위'
 
   function go(next: DateStr) {
     setDate(next > todayStr ? todayStr : next)
@@ -65,19 +75,26 @@ export default function Today() {
   }
 
   return (
-    <main className="page">
+    <main className="page today">
       <header className="today-head">
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="이전 날"
-          onClick={() => go(addDays(date, -1))}
-        >
+        <button type="button" className="icon-btn" aria-label="이전 날" onClick={() => go(addDays(date, -1))}>
           <ChevronLeft />
         </button>
-        <h1 className="page-title" aria-live="polite">
-          {formatKorean(date)}
-        </h1>
+        <div className="today-title">
+          <h1 className="page-title" aria-live="polite">
+            {formatKorean(date)}
+          </h1>
+          {profile &&
+            (maintaining ? (
+              <span className="chip chip--good" data-testid="phase-chip">
+                {profile.breakUntil ? `쉬어 가는 유지 기간 · ${formatShort(profile.breakUntil)}까지` : '유지 중'}
+              </span>
+            ) : (
+              <span className="chip chip--accent" data-testid="phase-chip">
+                감량 {weekOfPhase(profile, todayStr)}주차
+              </span>
+            ))}
+        </div>
         <button
           type="button"
           className="icon-btn"
@@ -115,57 +132,49 @@ export default function Today() {
         </div>
       )}
 
-      <section className="card" aria-labelledby="kcal-card-title">
+      <section className="panel today-hero" aria-labelledby="kcal-card-title">
         <h2 className="card-title" id="kcal-card-title">
-          {plan === null ? '섭취 칼로리' : over ? '목표를 넘은 양' : '남은 칼로리'}
+          {isToday ? '오늘 먹은 양' : '이날 먹은 양'}
         </h2>
-        <p className={`big-num${over ? ' kcal-hero--over' : ''}`}>
-          <span data-testid="kcal-hero">
-            {plan === null ? fmtKcal(eaten) : over ? `+${fmtKcal(-remaining)}` : fmtKcal(remaining)}
-          </span>
+        <p className="big-num">
+          <span data-testid="kcal-eaten">{fmtKcal(eaten)}</span>
           <span className="unit">kcal</span>
         </p>
         {plan !== null && (
           <>
-            <div
-              className="kcal-bar"
-              role="progressbar"
-              aria-label="목표 대비 섭취량"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={pct}
-            >
-              <div
-                className={`kcal-bar-fill${over ? ' kcal-bar-fill--over' : ''}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <p className="small muted">
-              목표 <span className="num">{fmtKcal(target)}</span> · 섭취{' '}
-              <span className="num" data-testid="kcal-eaten">
-                {fmtKcal(eaten)}
-              </span>{' '}
-              kcal
+            <IntakeGauge eaten={eaten} targetKcal={target} />
+            <p className="today-hero-msg" data-testid="kcal-status">
+              {state === 'in' && `${rangeName} 안이에요.`}
+              {state === 'under' &&
+                (isToday ? (
+                  <>
+                    <span className="num">
+                      {fmtKcal(range.low - eaten)}~{fmtKcal(range.high - eaten)}
+                    </span>{' '}
+                    kcal 더 먹으면 {rangeName} 안이에요.
+                  </>
+                ) : (
+                  `${rangeName}보다 ${fmtKcal(range.low - eaten)} kcal 적게 기록했어요.`
+                ))}
+              {state === 'over' && (
+                <>
+                  {rangeName}를 <span className="num">{fmtKcal(eaten - range.high)}</span> kcal 넘었어요.{' '}
+                  {week.avgState === 'in'
+                    ? '이번 주 평균은 범위 안이니 괜찮아요.'
+                    : '하루쯤은 괜찮아요. 한 주 평균으로 봐요.'}
+                </>
+              )}
             </p>
-            {over && (
-              <p className="small muted" style={{ marginTop: 4 }}>
-                하루쯤 넘어도 괜찮아요. 목표는 주간 추세를 보고 다시 맞춰요.
-              </p>
-            )}
           </>
         )}
       </section>
 
-      <button
-        type="button"
-        className="btn btn--primary btn--block add-meal"
-        onClick={() => setSheetOpen(true)}
-      >
+      <button type="button" className="btn btn--primary btn--block btn--lg" onClick={() => setSheetOpen(true)}>
         식사 추가
       </button>
 
       <section className="card" aria-labelledby="meals-card-title">
-        <div className="meals-head">
+        <div className="section-head">
           <h2 className="card-title" id="meals-card-title">
             식사 기록
           </h2>
@@ -200,17 +209,35 @@ export default function Today() {
         )}
       </section>
 
+      {plan !== null && (
+        <section className="card" aria-labelledby="week-card-title">
+          <div className="section-head">
+            <h2 className="card-title" id="week-card-title">
+              {isThisWeek ? '이번 주' : `${formatShort(week.days[0].date)}~${formatShort(week.days[6].date)} 주`}
+            </h2>
+            <span className="chip" data-testid="week-count">
+              기록 {week.recordedDays}/7일
+            </span>
+          </div>
+          <WeekStrip week={week} targetKcal={target} selected={date} today={todayStr} onSelect={go} />
+          <p className="week-summary" data-testid="week-summary">
+            {week.avgKcal === null ? (
+              '이 주에는 식사 기록이 아직 없어요.'
+            ) : (
+              <>
+                기록한 {week.mealDays}일 평균 <b className="num">{fmtKcal(week.avgKcal)}</b> kcal로{' '}
+                {week.avgState === 'in' && `${rangeName} 안이에요.`}
+                {week.avgState === 'over' && `${rangeName}보다 조금 많아요.`}
+                {week.avgState === 'under' && `${rangeName}보다 적어요. 너무 적게 먹으면 오래 가기 어려워요.`}
+              </>
+            )}
+          </p>
+        </section>
+      )}
+
       <WeightCard key={date} date={date} />
 
-      {streakDays >= 2 && (
-        <p className="small muted streak">
-          <span className="num">{streakDays}</span>일 연속 기록 중
-        </p>
-      )}
-
-      {sheetOpen && (
-        <MealSheet date={date} targetKcal={target} onClose={() => setSheetOpen(false)} />
-      )}
+      {sheetOpen && <MealSheet date={date} targetKcal={target} onClose={() => setSheetOpen(false)} />}
     </main>
   )
 }

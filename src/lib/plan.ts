@@ -1,6 +1,7 @@
 import type { Checkin, DateStr, MealEntry, Profile, WeightEntry } from '../types'
 import { parseDate } from './date'
 import { latestCheckin } from './selectors'
+import { effectiveWeeklyLoss } from './sustain'
 import { computeTarget, estimateTdee, initialTdee, type TargetResult, type TdeeEstimate } from './tdee'
 import { computeTrend, trendAt } from './trend'
 
@@ -20,7 +21,7 @@ export function buildInitialCheckin(profile: Profile, date: DateStr): Checkin {
   const tdee = initialTdee(profile, profile.startWeightKg, parseDate(date).getFullYear())
   const target = computeTarget({
     tdee,
-    weeklyLossKg: profile.weeklyLossKg,
+    weeklyLossKg: effectiveWeeklyLoss(profile),
     sex: profile.sex,
     weightKg: profile.startWeightKg,
   })
@@ -61,7 +62,7 @@ export function buildCheckinProposal(args: {
   const trendKg = trendAt(computeTrend(weights), asOf)
   const target = computeTarget({
     tdee: estimate.tdee,
-    weeklyLossKg: profile.weeklyLossKg,
+    weeklyLossKg: effectiveWeeklyLoss(profile),
     sex: profile.sex,
     weightKg: trendKg ?? profile.startWeightKg,
   })

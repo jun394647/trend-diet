@@ -30,9 +30,9 @@ const distToSegment = (px, py, ax, ay, bx, by) => {
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t))
 
 function render(size) {
-  const bg = [15, 118, 110]
+  const bg = [28, 30, 75]
   const line = [255, 255, 255]
-  const dot = [253, 230, 138]
+  const dot = [242, 184, 78]
   // 64 단위 좌표계. 마스커블 안전 영역 안에 들어오도록 가운데에 배치했다.
   const pts = [[16, 25], [26, 30], [35, 27.5], [48, 40]]
   const s = size / 64

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { today } from './lib/date'
 import { buildInitialCheckin, currentPlan } from './lib/plan'
 import { latestCheckin } from './lib/selectors'
+import { effectiveWeeklyLoss, type CheckinOption } from './lib/sustain'
 import { computeTarget } from './lib/tdee'
 import { computeTrend, trendAt } from './lib/trend'
 import * as storage from './storage'
@@ -46,6 +47,8 @@ export interface AppState {
   logFavorite: (id: string, date: DateStr) => Promise<void>
   /** 주간 체크인 결과를 저장한다. 제안을 받아들이지 않을 때는 이전 값을 그대로 넘긴다. */
   saveCheckin: (c: { date: DateStr; trendKg: number | null; estimatedTdee: number; targetKcal: number }) => Promise<void>
+  /** 주간 체크인에서 고른 선택지를 적용한다: 필요하면 프로필을 바꾸고 체크인을 기록한다. */
+  applyCheckinOption: (date: DateStr, trendKg: number | null, option: CheckinOption) => Promise<void>
   /** 백업 파일 내용(JSON 문자열)을 만들고 마지막 백업 시각을 기록한다. */
   exportBackup: () => Promise<string>
   /** 백업 JSON 문자열로 전체 데이터를 교체한다. 형식이 틀리면 예외. */
@@ -92,7 +95,7 @@ export const useStore = create<AppState>((set, get) => ({
     const trendKg = trendAt(computeTrend(weights), date)
     const target = computeTarget({
       tdee: plan.tdee,
-      weeklyLossKg: profile.weeklyLossKg,
+      weeklyLossKg: effectiveWeeklyLoss(profile),
       sex: profile.sex,
       weightKg: trendKg ?? profile.startWeightKg,
     })
@@ -168,6 +171,21 @@ export const useStore = create<AppState>((set, get) => ({
     }
     await storage.putCheckin(c)
     set((s) => ({ checkins: [...s.checkins.filter((x) => x.date !== date), c].sort(byDate) }))
+  },
+
+  applyCheckinOption: async (date, trendKg, option) => {
+    const { profile } = get()
+    if (option.profilePatch && profile) {
+      const next: Profile = { ...profile, ...option.profilePatch }
+      await storage.saveProfile(next)
+      set({ profile: next })
+    }
+    await get().saveCheckin({
+      date,
+      trendKg,
+      estimatedTdee: option.estimatedTdee,
+      targetKcal: option.targetKcal,
+    })
   },
 
   exportBackup: async () => {

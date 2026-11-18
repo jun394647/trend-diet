@@ -34,14 +34,17 @@ beforeEach(async () => {
 })
 
 describe('Today', () => {
-  it('오늘 날짜와 남은 칼로리를 보여 준다', () => {
+  it('오늘 날짜, 먹은 양, 목표 범위, 지금 단계를 보여 준다', () => {
     renderToday()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(formatKorean(today()))
-    expect(screen.getByTestId('kcal-hero')).toHaveTextContent(fmt(target()))
+    expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('0')
+    // 아직 먹지 않았으면 범위까지 남은 양을 알려 준다.
+    expect(screen.getByTestId('kcal-status')).toHaveTextContent(`${fmt(target() - 100)}~${fmt(target() + 100)}`)
+    expect(screen.getByTestId('phase-chip')).toHaveTextContent('감량')
     expect(screen.getByRole('button', { name: '다음 날' })).toBeDisabled()
   })
 
-  it('시트에서 직접 입력으로 식사를 추가하면 남은 칼로리가 줄어든다', async () => {
+  it('시트에서 직접 입력으로 식사를 추가하면 먹은 양이 늘어난다', async () => {
     renderToday()
     fireEvent.click(screen.getByRole('button', { name: '식사 추가' }))
     const dialog = screen.getByRole('dialog', { name: '식사 추가' })
@@ -49,12 +52,12 @@ describe('Today', () => {
     fireEvent.change(within(dialog).getByLabelText('이름 (선택)'), { target: { value: '점심' } })
     fireEvent.click(within(dialog).getByRole('button', { name: '기록하기' }))
 
-    await waitFor(() =>
-      expect(screen.getByTestId('kcal-hero')).toHaveTextContent(fmt(target() - 500)),
-    )
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('500')
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
     expect(screen.getByText('점심')).toBeInTheDocument()
-    expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('500')
+    expect(screen.getByTestId('kcal-status')).toHaveTextContent(`${fmt(target() - 600)}~${fmt(target() - 400)}`)
   })
 
   it('대충 입력은 목표 비율만큼의 칼로리를 추가한다', async () => {
@@ -64,9 +67,7 @@ describe('Today', () => {
     fireEvent.click(screen.getByRole('button', { name: /보통/ }))
 
     const expected = roughKcal('medium', target())
-    await waitFor(() =>
-      expect(screen.getByTestId('kcal-hero')).toHaveTextContent(fmt(target() - expected)),
-    )
+    await waitFor(() => expect(screen.getByTestId('kcal-eaten')).toHaveTextContent(fmt(expected)))
     expect(screen.getByText('대충 입력 · 보통')).toBeInTheDocument()
   })
 
@@ -79,15 +80,31 @@ describe('Today', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(screen.getByText('바나나')).toBeInTheDocument()
-    expect(screen.getByTestId('kcal-hero')).toHaveTextContent(fmt(target() - 90))
+    expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('90')
     expect(useStore.getState().favorites[0].useCount).toBe(1)
   })
 
-  it('목표를 넘으면 넘은 양을 보여 준다', async () => {
-    await useStore.getState().addMeal({ date: today(), kcal: target() + 120, source: 'exact' })
+  it('목표 위아래 100kcal까지는 범위 안으로 본다', async () => {
+    await useStore.getState().addMeal({ date: today(), kcal: target() + 80, source: 'exact' })
     renderToday()
-    expect(screen.getByTestId('kcal-hero')).toHaveTextContent('+120')
-    expect(screen.getByText('목표를 넘은 양')).toBeInTheDocument()
+    expect(screen.getByTestId('kcal-status')).toHaveTextContent('목표 범위 안이에요.')
+  })
+
+  it('범위를 넘으면 넘은 양을 알려 주되 한 주 평균으로 본다고 말한다', async () => {
+    await useStore.getState().addMeal({ date: today(), kcal: target() + 320, source: 'exact' })
+    renderToday()
+    const status = screen.getByTestId('kcal-status')
+    expect(status).toHaveTextContent('220 kcal 넘었어요')
+    expect(status).toHaveTextContent('한 주 평균으로 봐요')
+    expect(screen.getByTestId('week-summary')).toHaveTextContent('조금 많아요')
+  })
+
+  it('유지 기간에는 유지 범위라고 부른다', async () => {
+    useStore.setState((st) => ({ profile: { ...st.profile!, phase: 'maintain', breakUntil: addDays(today(), 10) } }))
+    await useStore.getState().addMeal({ date: today(), kcal: target(), source: 'exact' })
+    renderToday()
+    expect(screen.getByTestId('phase-chip')).toHaveTextContent('쉬어 가는 유지 기간')
+    expect(screen.getByTestId('kcal-status')).toHaveTextContent('유지 범위 안이에요.')
   })
 
   it('체중을 저장하면 값과 추세를 보여 준다', async () => {
@@ -131,7 +148,7 @@ describe('Today', () => {
     fireEvent.click(screen.getByRole('button', { name: '저녁 600 kcal 삭제' }))
 
     await waitFor(() => expect(screen.queryByText('저녁')).not.toBeInTheDocument())
-    expect(screen.getByTestId('kcal-hero')).toHaveTextContent(fmt(target()))
+    expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('0')
   })
 
   it('이전 날로 옮겨 그날 식사를 기록할 수 있다', async () => {
@@ -148,7 +165,7 @@ describe('Today', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '오늘로 돌아가기' }))
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(formatKorean(today()))
-    expect(screen.getByTestId('kcal-hero')).toHaveTextContent(fmt(target()))
+    expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('0')
   })
 
   it('체크인과 백업 안내는 필요할 때만 보인다', async () => {
@@ -173,9 +190,17 @@ describe('Today', () => {
     expect(screen.queryByText('주간 체크인을 할 때가 됐어요')).not.toBeInTheDocument()
   })
 
-  it('이틀 이상 이어서 기록하면 연속 기록을 보여 준다', async () => {
-    await useStore.getState().setWeight(addDays(today(), -1), 80.2)
+  it('한 주에 기록한 날 수와 평균을 보여 주고, 요일을 누르면 그날로 옮긴다', async () => {
+    // 이번 주 월요일에 식사를 기록해 둔다(오늘이 월요일이면 오늘).
+    const dow = (new Date().getDay() + 6) % 7
+    const monday = addDays(today(), -dow)
+    await useStore.getState().addMeal({ date: monday, kcal: target(), source: 'exact' })
     renderToday()
-    expect(screen.getByText(/일 연속 기록 중/)).toHaveTextContent('2일 연속 기록 중')
+    expect(screen.getByTestId('week-count')).toHaveTextContent(dow === 0 ? '기록 1/7일' : '기록 2/7일')
+    expect(screen.getByTestId('week-summary')).toHaveTextContent(`기록한 1일 평균 ${fmt(target())} kcal로 목표 범위 안이에요.`)
+
+    fireEvent.click(screen.getByRole('button', { name: /^월요일/ }))
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(formatKorean(monday))
+    expect(screen.getByRole('button', { name: /^월요일/ })).toHaveAttribute('aria-pressed', 'true')
   })
 })

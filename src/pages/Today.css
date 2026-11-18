@@ -1,76 +1,123 @@
 .today-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 4px;
+  margin-inline: -8px;
 }
 
-.today-head .page-title {
+.today-title {
   flex: 1 1 0;
   min-width: 0;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.today-title .page-title {
   white-space: nowrap;
 }
 
 .today-jump {
   display: flex;
   justify-content: center;
-  margin-top: -6px;
+  margin-top: -12px;
 }
 
-.today-jump .btn {
-  color: var(--accent);
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-.banner .btn {
-  flex: 0 0 auto;
-  text-decoration: none;
-  color: var(--text);
+.section-head .card-title {
+  margin-bottom: 0;
+}
+
+/* ── 먹은 양 패널 ── */
+
+.today-hero .card-title {
+  margin-bottom: 6px;
+}
+
+.today-hero-msg {
+  margin-top: 14px;
+  font-size: 0.9375rem;
+  color: var(--panel-text);
+}
+
+.gauge {
+  margin-top: 20px;
+}
+
+.gauge-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--panel-line);
+}
+
+.gauge-band {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-mark) 38%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--panel-mark);
+}
+
+.gauge-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: var(--panel-text);
+  transition: width 0.3s ease;
+}
+
+.gauge-dot {
+  position: absolute;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  background: var(--panel-text);
+  border: 4px solid var(--panel);
+  box-shadow: 0 0 0 2px var(--panel-text);
+  transition: left 0.3s ease;
+}
+
+.gauge-scale {
+  position: relative;
+  height: 20px;
+  margin-top: 10px;
+  font-size: 0.75rem;
+  color: var(--panel-text-2);
+}
+
+.gauge-scale > span {
+  position: absolute;
+  transform: translateX(-50%);
   white-space: nowrap;
 }
 
-.kcal-hero--over {
-  color: var(--warn);
-}
-
-.kcal-bar {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  overflow: hidden;
-  margin: 12px 0 8px;
-}
-
-.kcal-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-  transition: width 0.25s ease;
-}
-
-.kcal-bar-fill--over {
-  background: var(--warn);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .kcal-bar-fill {
-    transition: none;
-  }
-}
-
-.streak {
-  text-align: center;
-}
+/* ── 식사 목록 ── */
 
 .meal-list > li {
   padding: 2px 0;
-  min-height: 48px;
+  min-height: 50px;
 }
 
 .meal-name {
   flex: 1 1 0;
   min-width: 0;
-  overflow-wrap: anywhere;
+  font-weight: 600;
 }
 
 .meal-kcal {
@@ -79,18 +126,147 @@
   color: var(--text-2);
 }
 
-.meals-head {
+/* ── 한 주 ── */
+
+.week-plot {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.week-plot {
+  --week-bar-h: 88px;
+  /* 막대 아래의 요일 글자와 체중 점이 차지하는 높이 */
+  --week-foot: 46px;
+}
+
+/* 막대 영역에만 걸치는 목표 범위 띠. --lo, --hi는 막대 영역 높이에 대한 비율(0~1). */
+.week-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--week-foot) + var(--week-bar-h) * var(--lo));
+  height: calc(var(--week-bar-h) * (var(--hi) - var(--lo)));
+  background: var(--mark-soft);
+  border-block: 1.5px dashed var(--mark);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.week-day {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  display: grid;
+  grid-template-rows: var(--week-bar-h) 24px 10px;
+  row-gap: 6px;
+  justify-items: center;
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.week-day:disabled {
+  cursor: default;
+}
+
+.week-day:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.week-bar-slot {
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: flex-end;
+  justify-content: center;
 }
 
-.meals-head .card-title {
-  margin-bottom: 4px;
+.week-bar {
+  width: min(22px, 70%);
+  border-radius: 5px 5px 2px 2px;
+  background: var(--accent);
 }
 
-.add-meal {
-  min-height: 52px;
-  font-size: 1.0625rem;
+.week-day--over .week-bar {
+  background: var(--warn);
+}
+
+.week-day--under .week-bar {
+  background: color-mix(in srgb, var(--accent) 55%, var(--bg));
+}
+
+.week-empty {
+  width: 8px;
+  height: 2px;
+  margin-bottom: 1px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.week-dow {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.week-day.is-today .week-dow {
+  color: var(--accent);
+}
+
+.week-day.is-selected .week-dow {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.week-day:disabled .week-dow {
+  opacity: 0.45;
+}
+
+.week-weighed {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.week-weighed.is-on {
+  background: var(--text-2);
+}
+
+.week-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.week-legend-band {
+  width: 16px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--mark-soft);
+  border-block: 1.5px dashed var(--mark);
+}
+
+.week-legend-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-2);
+  margin-left: 10px;
+}
+
+.week-summary {
+  margin-top: 12px;
+  font-size: 0.9375rem;
 }

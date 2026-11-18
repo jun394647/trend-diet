@@ -1,44 +1,83 @@
-/* 공통 디자인 토큰과 컴포넌트 클래스. 화면별 스타일은 각 화면의 CSS 파일에 둔다. */
+/*
+ * 디자인 시스템. 화면별 스타일은 각 화면의 CSS 파일에 두고, 색과 글꼴은 여기 토큰만 쓴다.
+ *
+ * 구성: 한 장의 종이 위에 구획을 가는 선으로만 나눈 기록장. 카드 상자는 쓰지 않는다.
+ *       화면마다 가장 중요한 한 가지만 짙은 남색 패널(.panel)에 올린다.
+ * 색:   남색 잉크 계열의 무채색 + 남보라 강조 + 꿀색 표식(목표 범위, 지금 위치).
+ * 글꼴: 숫자와 제목의 로마자는 Bricolage Grotesque, 한글과 본문은 기기 기본 글꼴.
+ */
 :root {
-  --bg: #f6f7f5;
+  /* 바탕과 글자 */
+  --bg: #f5f5fa;
   --surface: #ffffff;
-  --surface-2: #eef1ee;
-  --text: #17201d;
-  --text-2: #5b6763;
-  --border: #dde3df;
-  --accent: #0f766e;
+  --surface-2: #e9eaf4;
+  --text: #171a33;
+  --text-2: #5a5f82;
+  --border: #dcdeec;
+
+  /* 강조 */
+  --accent: #4741d6;
   --accent-text: #ffffff;
-  --accent-soft: #d9efec;
-  --warn: #b45309;
-  --warn-soft: #fdf0d9;
+  --accent-soft: #e5e4fb;
+  /* 표식: 목표 범위와 지금 위치를 가리킬 때만 쓴다 */
+  --mark: #c98212;
+  --mark-soft: #f8ecd2;
+
+  /* 패널: 화면에서 가장 중요한 한 구획 */
+  --panel: #1c1e4b;
+  --panel-text: #f3f3ff;
+  --panel-text-2: #b3b6e6;
+  --panel-line: #353a7a;
+  --panel-mark: #f2b84e;
+
+  /* 상태 */
+  --good: #167a4e;
+  --good-soft: #dcf2e6;
+  --warn: #99580a;
+  --warn-soft: #fbefd6;
   --danger: #b42318;
   --danger-soft: #fde4e1;
-  --good: #15803d;
-  --radius: 14px;
-  --radius-sm: 10px;
-  --gutter: 16px;
-  --tabbar-h: 60px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR',
+
+  --radius: 18px;
+  --radius-sm: 12px;
+  --gutter: 20px;
+  --tabbar-h: 62px;
+
+  --font-body: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR',
     'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', var(--font-body);
+
+  font-family: var(--font-body);
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #101514;
-    --surface: #1a2120;
-    --surface-2: #232c2a;
-    --text: #e8eeec;
-    --text-2: #9aa8a4;
-    --border: #2e3936;
-    --accent: #2dd4bf;
-    --accent-text: #06201d;
-    --accent-soft: #143b37;
-    --warn: #fbbf24;
+    --bg: #0f1020;
+    --surface: #181a2e;
+    --surface-2: #23264a;
+    --text: #ecedfa;
+    --text-2: #a2a6cb;
+    --border: #2b2e52;
+
+    --accent: #a9a6ff;
+    --accent-text: #14143d;
+    --accent-soft: #29295e;
+    --mark: #f2b84e;
+    --mark-soft: #3d3114;
+
+    --panel: #20225a;
+    --panel-text: #f3f3ff;
+    --panel-text-2: #b3b6e6;
+    --panel-line: #3b4090;
+    --panel-mark: #f2b84e;
+
+    --good: #5fd39a;
+    --good-soft: #143326;
+    --warn: #f3c062;
     --warn-soft: #3a2c0c;
-    --danger: #f97066;
+    --danger: #ff8a80;
     --danger-soft: #3d1a17;
-    --good: #4ade80;
   }
 }
 
@@ -52,9 +91,11 @@ body {
   background: var(--bg);
   color: var(--text);
   font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 h1,
@@ -77,12 +118,14 @@ select {
   min-height: 100dvh;
 }
 
+/* ── 화면 뼈대 ─────────────────────────────────────────── */
+
 .page {
-  padding: calc(env(safe-area-inset-top) + 16px) var(--gutter)
-    calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 24px);
+  padding: calc(env(safe-area-inset-top) + 20px) max(var(--gutter), env(safe-area-inset-right))
+    calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 32px) max(var(--gutter), env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 20px;
 }
 
 .page--no-tabbar {
@@ -90,23 +133,48 @@ select {
 }
 
 .page-title {
-  font-size: 1.375rem;
+  font-family: var(--font-display);
+  font-size: 1.625rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  text-wrap: balance;
 }
 
+/* 구획. 상자 없이 위쪽 가는 선으로만 나눈다. */
 .card {
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* 작은 구획 제목 */
+.card-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+  margin-bottom: 10px;
+}
+
+/* 화면에서 가장 중요한 한 구획. 화면당 하나만 쓴다. */
+.panel {
+  background: var(--panel);
+  color: var(--panel-text);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+}
+
+.panel .muted,
+.panel .card-title {
+  color: var(--panel-text-2);
+}
+
+/* 입력 폼처럼 따로 떠 있어야 하는 덩어리 */
+.well {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
-}
-
-.card-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-2);
-  margin-bottom: 8px;
+  padding: 18px;
 }
 
 .muted {
@@ -122,11 +190,21 @@ select {
 }
 
 .big-num {
-  font-size: 2.25rem;
+  font-family: var(--font-display);
+  font-size: 2.75rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.big-num .unit,
+.unit {
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin-left: 4px;
+  opacity: 0.75;
 }
 
 .row {
@@ -142,17 +220,19 @@ select {
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
+
+/* ── 버튼과 입력 ───────────────────────────────────────── */
 
 .btn {
   appearance: none;
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: var(--radius-sm);
-  min-height: 44px;
+  min-height: 46px;
   padding: 0 16px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -160,6 +240,11 @@ select {
   gap: 6px;
   text-decoration: none;
   color: var(--text);
+  transition: transform 80ms ease;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .btn:disabled {
@@ -176,15 +261,23 @@ select {
 .btn--danger {
   color: var(--danger);
   border-color: var(--danger);
+  background: transparent;
 }
 
 .btn--ghost {
   border-color: transparent;
   background: transparent;
+  color: var(--accent);
 }
 
 .btn--block {
   width: 100%;
+}
+
+.btn--lg {
+  min-height: 54px;
+  font-size: 1.0625rem;
+  border-radius: 16px;
 }
 
 .field {
@@ -196,15 +289,15 @@ select {
 .field > label,
 .label {
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-2);
 }
 
 .input,
 .select {
   width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
+  min-height: 48px;
+  padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -223,8 +316,38 @@ select {
   font-size: 0.8125rem;
 }
 
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border-radius: 14px;
+}
+
+.segmented > button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  min-height: 44px;
+  border-radius: 10px;
+  font-weight: 700;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.segmented > button[aria-pressed='true'],
+.segmented > button[aria-selected='true'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(23 26 51 / 14%);
+}
+
+/* ── 알림과 표시 ───────────────────────────────────────── */
+
 .banner {
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
   background: var(--accent-soft);
   display: flex;
@@ -232,6 +355,13 @@ select {
   justify-content: space-between;
   gap: 12px;
   font-size: 0.9375rem;
+}
+
+.banner .btn {
+  min-height: 40px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  font-size: 0.875rem;
 }
 
 .banner--warn {
@@ -242,33 +372,56 @@ select {
   background: var(--danger-soft);
 }
 
-.segmented {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 4px;
-  padding: 4px;
+/* 상태를 글자와 함께 알려 주는 작은 표시 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
   background: var(--surface-2);
-  border-radius: var(--radius-sm);
-}
-
-.segmented > button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  min-height: 44px;
-  border-radius: 8px;
-  font-weight: 600;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.segmented > button[aria-pressed='true'],
-.segmented > button[aria-selected='true'] {
-  background: var(--surface);
   color: var(--text);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
+
+.chip--good {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.chip--warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.chip--accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.list > li:first-child {
+  border-top: 0;
+}
+
+/* ── 아래 탭과 시트 ────────────────────────────────────── */
 
 .tabbar {
   position: fixed;
@@ -276,7 +429,9 @@ select {
   right: 0;
   bottom: 0;
   z-index: 10;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -294,15 +449,21 @@ select {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
   text-decoration: none;
   color: var(--text-2);
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .tabbar a.active {
   color: var(--accent);
+}
+
+.tabbar a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+  border-radius: 12px;
 }
 
 .tabbar svg {
@@ -314,7 +475,7 @@ select {
   position: fixed;
   inset: 0;
   z-index: 20;
-  background: rgb(0 0 0 / 45%);
+  background: rgb(10 11 30 / 55%);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -323,33 +484,15 @@ select {
 .sheet {
   width: 100%;
   max-width: 520px;
-  max-height: 88dvh;
+  max-height: 90dvh;
   overflow-y: auto;
-  background: var(--surface);
-  border-radius: 18px 18px 0 0;
-  padding: 16px var(--gutter) calc(env(safe-area-inset-bottom) + 16px);
+  background: var(--bg);
+  border-radius: 24px 24px 0 0;
+  padding: 20px max(var(--gutter), env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 20px)
+    max(var(--gutter), env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.list > li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 0;
-  border-top: 1px solid var(--border);
-}
-
-.list > li:first-child {
-  border-top: 0;
+  gap: 16px;
 }
 
 .center-screen {
@@ -357,4 +500,11 @@ select {
   display: grid;
   place-items: center;
   color: var(--text-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

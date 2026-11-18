@@ -3,6 +3,9 @@ export type DateStr = string
 
 export type Sex = 'M' | 'F'
 
+/** 'lose'는 감량 기간, 'maintain'은 유지 기간(쉬어 가기 포함). */
+export type Phase = 'lose' | 'maintain'
+
 export interface Profile {
   heightCm: number
   birthYear: number
@@ -13,6 +16,12 @@ export interface Profile {
   goalWeightKg: number
   /** 주당 감량 목표(kg). 0이면 유지. */
   weeklyLossKg: number
+  /** 지금 단계. 없으면 weeklyLossKg가 0보다 클 때 'lose'로 본다. */
+  phase?: Phase
+  /** 지금 단계를 시작한 날. 없으면 createdAt의 날짜로 본다. */
+  phaseStartedAt?: DateStr
+  /** 잠시 쉬어 가는 유지 기간이면 끝나는 날. 계속 유지하는 중이면 없음. */
+  breakUntil?: DateStr | null
   createdAt: string
 }
 

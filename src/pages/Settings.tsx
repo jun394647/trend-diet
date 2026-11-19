@@ -15,6 +15,7 @@ import { useStore } from '../store'
 import { useSync } from '../sync/store'
 import type { Phase, Profile } from '../types'
 import InstallEntry from '../components/InstallEntry'
+import OpenOnLaunchSetting from '../components/OpenOnLaunchSetting'
 import './Settings.css'
 
 type Notice = { kind: 'ok' | 'error'; text: string }
@@ -460,6 +461,8 @@ export default function Settings() {
           </button>
         )}
       </section>
+
+      <OpenOnLaunchSetting />
 
       <InstallEntry />
 

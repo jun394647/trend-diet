@@ -8,6 +8,7 @@ import Onboarding from './pages/Onboarding'
 import Settings from './pages/Settings'
 import Today from './pages/Today'
 import Trend from './pages/Trend'
+import { armOnLaunch } from './pwa/openOnLaunch'
 import { useStore } from './store'
 import { useAi } from './ai/store'
 import { useSync } from './sync/store'
@@ -82,7 +83,11 @@ export default function App() {
 
   useEffect(() => {
     // 기기 기록을 먼저 읽고, 그다음 계정 동기화를 시작한다.
-    void init().then(() => useSync.getState().start())
+    void init().then(() => {
+      // 처음 열었을 때 이미 시작 설정이 끝나 있으면 식사 추가 창부터 연다(방금 온보딩을 마친 경우는 빼고).
+      armOnLaunch(useStore.getState().profile !== null)
+      return useSync.getState().start()
+    })
     void useAi.getState().check()
   }, [init])
 

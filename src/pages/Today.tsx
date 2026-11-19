@@ -17,7 +17,9 @@ import { intakeState, phaseOf, targetRange, weekOfPhase, weekStart, weekSummary 
 import { useStore } from '../store'
 import { useSync } from '../sync/store'
 import type { DateStr, MealEntry } from '../types'
+import HomeWidgets from '../components/home/HomeWidgets'
 import InstallHint from '../components/InstallHint'
+import { onRelaunch, takeLaunchOpen } from '../pwa/openOnLaunch'
 import { useLaunchAction } from '../pwa/launchAction'
 import './Today.css'
 
@@ -42,13 +44,25 @@ export default function Today() {
 
   const todayStr = today()
   const [date, setDate] = useState<DateStr>(todayStr)
+  // 앱을 열면 식사 추가 창부터 보여 준다(설정에서 끌 수 있다). 바로가기로 체중 기록을 고른 경우는 예외.
   const [sheetOpen, setSheetOpen] = useState(false)
+  useEffect(() => {
+    const open = () => {
+      if (takeLaunchOpen()) {
+        setDate(today())
+        setSheetOpen(true)
+      }
+    }
+    open()
+    return onRelaunch(open)
+  }, [])
 
   // 홈 화면 아이콘을 길게 눌러 고른 바로가기(식사 추가, 체중 기록)를 처리한다.
   const launch = useLaunchAction()
   useEffect(() => {
     if (launch === 'add-meal') setSheetOpen(true)
     if (launch === 'weight') {
+      setSheetOpen(false)
       const card = document.querySelector('[aria-labelledby="weight-card-title"]')
       card?.scrollIntoView?.({ block: 'center' })
       card?.querySelector<HTMLElement>('input, button')?.focus()
@@ -240,6 +254,8 @@ export default function Today() {
           ))}
         </div>
       )}
+
+      {isToday && plan !== null && <HomeWidgets today={todayStr} targetKcal={target} />}
 
       <section className="card" aria-labelledby="meals-card-title">
         <div className="section-head">

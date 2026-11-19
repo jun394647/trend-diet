@@ -15,6 +15,7 @@
     "@anthropic-ai/sdk": "^1.10.0",
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@supabase/supabase-js": "^2.119.0",
+    "@vercel/functions": "^3.11.3",
     "dexie": "^4.4.7",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

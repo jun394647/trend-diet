@@ -279,7 +279,7 @@ describe("서버 전용 task 'nudge'", () => {
   it('effort는 low이고, 구조화 출력으로 { message }를 받는다', async () => {
     expect(EFFORT.nudge).toBe('low')
     const p = buildParams(await request('morning')) as unknown as { model: string; output_config: { effort: string; format: { type: string } } }
-    expect(p.model).toBe('claude-opus-5-5')
+    expect(p.model).toBe('claude-haiku-5-5')
     expect(p.output_config.effort).toBe('low')
     expect(p.output_config.format.type).toBe('json_schema')
     expect(NudgeSchema.safeParse({ message: '안녕하세요.' }).success).toBe(true)

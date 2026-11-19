@@ -67,29 +67,28 @@ export interface TaskConfig {
 /** 기본 모델. task별 기본값은 TASK_DEFAULTS에 있다. */
 export const MODEL: ModelId = 'claude-opus-5-5'
 
+/** 가장 싼 모델. 입력·출력 토큰 값이 Opus 5.5의 40분의 1이다. */
+export const CHEAP_MODEL: ModelId = 'claude-haiku-5-5'
+
 /**
  * task별 기본 설정. 모델·effort를 바꿀 때는 여기 한 곳만 고친다.
  *
- * 사람이 기다리는 task는 fast 모드(같은 모델이 더 빨리 쓴다, 값은 두 배)를 쓰고, 코치와 돌아보기는 effort를 low로 낮췄다.
- * 2026-11-19 프로덕션에서 같은 입력으로 task마다 2번씩 비교한 결과(서버 로그 기준):
- *   ask          첫 글자 약 6.9초 → 1.5~1.8초, 전체 10~12초 → 3~6초
- *   week-review  첫 글자 8~13초 → 1.5초, 전체 12~16초 → 3초 안팎
- *   meal-text    약 4초 → 약 2초
- *   suggest      약 15초 → 약 6초
- * 답을 나란히 읽어 보면 항목, kcal, 숫자 인용, 말투, 권하는 방향이 같은 수준이었다. 더 작은 모델로는 아직 비교하지 않았다.
- * 배경에서 도는 nudge(디스코드 예약 메시지)는 기다리는 사람이 없어 standard로 둔다.
- * 배포 환경에서는 코드를 고치지 않고 환경변수로 바꿔 볼 수 있다(taskConfig).
+ * 2026-11-19 주인 요청으로 비용을 가장 적게 쓰는 쪽으로 바꿨다: 모든 task가 Haiku 5.5, effort low, 생각하기 끔.
+ * 생각하기를 끄면 생각에 쓰는 출력 토큰이 없어진다. 대신 답의 질과 속도는 Opus보다 떨어질 수 있다.
+ * Haiku는 서버 쪽 대체 모델(fallbacks)을 지원하지 않아, 거절하면 그대로 refused가 된다.
+ * 시스템 프롬프트가 Haiku의 최소 캐시 크기보다 짧아 캐시는 쓰지 않는다.
+ * 이전 설정(Opus 5.5 + fast mode)으로 돌리려면 환경변수 AI_MODEL_<TASK>=claude-opus-5-5, AI_SPEED_<TASK>=fast,
+ * AI_THINKING_<TASK>=on 으로 코드를 고치지 않고 바꿀 수 있다(taskConfig).
  *
- * maxTokens는 프로덕션에서 잰 출력(생각하기 포함 93~1,160토큰)의 몇 배로 잡은 상한이다.
+ * maxTokens는 생각하기 없이 쓰는 답의 길이(수백 토큰)에 여유를 둔 상한이다.
  */
 export const TASK_DEFAULTS: Record<ModelTask, TaskConfig> = {
-  'meal-text': { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'fast' },
-  'meal-photo': { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'fast' },
-  suggest: { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'fast' },
-  'week-review': { model: MODEL, effort: 'low', maxTokens: 8000, thinking: 'on', cacheSystem: false, speed: 'fast' },
-  // 코치와는 몇 분 안에 이어서 묻는 일이 많아, 두 번째 질문부터 시스템 프롬프트를 캐시에서 읽는다.
-  ask: { model: MODEL, effort: 'low', maxTokens: 8000, thinking: 'on', cacheSystem: true, speed: 'fast' },
-  nudge: { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'standard' },
+  'meal-text': { model: CHEAP_MODEL, effort: 'low', maxTokens: 2000, thinking: 'off', cacheSystem: false, speed: 'standard' },
+  'meal-photo': { model: CHEAP_MODEL, effort: 'low', maxTokens: 2000, thinking: 'off', cacheSystem: false, speed: 'standard' },
+  suggest: { model: CHEAP_MODEL, effort: 'low', maxTokens: 2000, thinking: 'off', cacheSystem: false, speed: 'standard' },
+  'week-review': { model: CHEAP_MODEL, effort: 'low', maxTokens: 3000, thinking: 'off', cacheSystem: false, speed: 'standard' },
+  ask: { model: CHEAP_MODEL, effort: 'low', maxTokens: 3000, thinking: 'off', cacheSystem: false, speed: 'standard' },
+  nudge: { model: CHEAP_MODEL, effort: 'low', maxTokens: 2000, thinking: 'off', cacheSystem: false, speed: 'standard' },
 }
 
 /** task별 기본 effort. */

@@ -6,6 +6,7 @@ import {
   EFFORT,
   FALLBACK_BETA,
   MODEL,
+  CHEAP_MODEL,
   MODEL_RULES,
   TASK_DEFAULTS,
   buildParams,
@@ -38,13 +39,20 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+
+/** 예전 설정(Opus 5.5, 생각하기 켬). 서버 쪽 대체 모델처럼 Opus에만 있는 경로를 시험할 때 쓴다. */
+const opus = (task: ModelTask) => ({ ...TASK_DEFAULTS[task], model: 'claude-opus-5-5' as const, thinking: 'on' as const })
+const OPUS_ENV = { AI_MODEL_ASK: 'claude-opus-5-5', AI_THINKING_ASK: 'on' }
+
 describe('buildParams', () => {
-  it.each(TASKS)('%s: 모델, effort, 구조화 출력, fallback을 계약대로 보낸다', (task) => {
+  it.each(TASKS)('%s: 기본은 가장 싼 모델에 생각하기를 끄고, 구조화 출력으로 받는다', (task) => {
     const p = buildParams(sampleRequests[task]) as unknown as Record<string, unknown>
-    expect(p.model).toBe('claude-opus-5-5')
+    expect(p.model).toBe('claude-haiku-5-5')
     expect(p.max_tokens).toBe(TASK_DEFAULTS[task].maxTokens)
-    expect(p.betas).toEqual([FALLBACK_BETA])
-    expect(p.fallbacks).toBe('default')
+    expect(p.thinking).toEqual({ type: 'disabled' })
+    // Haiku는 서버 쪽 대체 모델을 지원하지 않는다.
+    expect(p).not.toHaveProperty('betas')
+    expect(p).not.toHaveProperty('fallbacks')
     const oc = p.output_config as { effort: string; format: { type: string; schema: unknown } }
     expect(oc.effort).toBe(EFFORT[task])
     expect(oc.format.type).toBe('json_schema')
@@ -58,10 +66,18 @@ describe('buildParams', () => {
     expect(Array.isArray(p.messages)).toBe(true)
   })
 
-  it('이 모델이 거절하는 파라미터는 보내지 않는다', () => {
+  it.each(TASKS)('%s: Opus로 바꾸면 서버 쪽 대체 모델(fallback)을 함께 보내고 생각하기 값은 보내지 않는다', (task) => {
+    const p = buildParams(sampleRequests[task], opus(task)) as unknown as Record<string, unknown>
+    expect(p.model).toBe('claude-opus-5-5')
+    expect(p.betas).toEqual([FALLBACK_BETA])
+    expect(p.fallbacks).toBe('default')
+    expect(p).not.toHaveProperty('thinking')
+  })
+
+  it('모델이 거절하는 파라미터는 보내지 않는다', () => {
     for (const task of TASKS) {
       const p = buildParams(sampleRequests[task]) as unknown as Record<string, unknown>
-      for (const key of ['thinking', 'temperature', 'top_p', 'top_k', 'tool_choice', 'tools', 'stream']) {
+      for (const key of ['temperature', 'top_p', 'top_k', 'tool_choice', 'tools', 'stream']) {
         expect(p).not.toHaveProperty(key)
       }
       expect(JSON.stringify(p)).not.toContain('budget_tokens')
@@ -74,26 +90,27 @@ describe('buildParams', () => {
     expect(EFFORT).toEqual({ 'meal-text': 'low', 'meal-photo': 'low', suggest: 'low', 'week-review': 'low', ask: 'low', nudge: 'low' })
   })
 
-  it('상한(max_tokens)은 task마다 다르고, 프로덕션에서 잰 출력(최대 880토큰)의 몇 배다', () => {
+  it('상한(max_tokens)은 생각하기 없이 쓰는 답(수백 토큰)에 여유를 둔 값이다', () => {
     for (const c of Object.values(TASK_DEFAULTS)) {
-      expect(c.maxTokens).toBeGreaterThanOrEqual(4000)
-      expect(c.maxTokens).toBeLessThanOrEqual(8000)
+      expect(c.maxTokens).toBeGreaterThanOrEqual(2000)
+      expect(c.maxTokens).toBeLessThanOrEqual(3000)
     }
   })
 
-  it('시스템 프롬프트 캐시는 이어서 묻는 코치 질문에만 쓴다', () => {
+  it('시스템 프롬프트가 Haiku의 최소 캐시 크기보다 짧아 캐시는 쓰지 않는다', () => {
     const cached = (Object.keys(TASK_DEFAULTS) as ModelTask[]).filter((t) => TASK_DEFAULTS[t].cacheSystem)
-    expect(cached).toEqual(['ask'])
+    expect(cached).toEqual([])
   })
 })
 
 describe('task별 설정', () => {
-  it('기본값은 모든 task가 지금의 모델이고, 생각하기는 켜 둔다', () => {
+  it('기본값은 모든 task가 가장 싼 모델이고, 생각하기는 끈다', () => {
     for (const task of Object.keys(TASK_DEFAULTS) as ModelTask[]) {
       expect(taskConfig(task, {})).toEqual(TASK_DEFAULTS[task])
-      expect(TASK_DEFAULTS[task].model).toBe(MODEL)
-      expect(TASK_DEFAULTS[task].thinking).toBe('on')
+      expect(TASK_DEFAULTS[task].model).toBe(CHEAP_MODEL)
+      expect(TASK_DEFAULTS[task].thinking).toBe('off')
     }
+    expect(CHEAP_MODEL).toBe('claude-haiku-5-5')
   })
 
   it('환경변수 이름은 AI_MODEL_<TASK>처럼 대문자와 밑줄로 쓴다', () => {
@@ -132,14 +149,14 @@ describe('task별 설정', () => {
     expect(Object.keys(MODEL_RULES)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'])
   })
 
-  it('사람이 기다리는 task는 fast mode를 쓰고, 배경 작업(nudge)은 쓰지 않는다. 켜도 받는 모델에만 보낸다', () => {
+  it('fast mode는 기본으로 쓰지 않고, 켜도 받는 모델에만 보낸다', () => {
     const req = sampleRequests.ask
-    for (const task of ['meal-text', 'meal-photo', 'suggest', 'week-review', 'ask'] as ModelTask[]) expect(TASK_DEFAULTS[task].speed).toBe('fast')
-    expect(TASK_DEFAULTS.nudge.speed).toBe('standard')
-    expect((buildParams(req) as unknown as Record<string, unknown>).speed).toBe('fast')
-    expect(taskConfig('ask', { AI_SPEED_ASK: 'standard' }).speed).toBe('standard')
-    expect(taskConfig('ask', { AI_SPEED_ASK: 'turbo' }).speed).toBe('fast')
-    expect(buildParams(req, { ...TASK_DEFAULTS.ask, speed: 'standard' })).not.toHaveProperty('speed')
+    for (const task of Object.keys(TASK_DEFAULTS) as ModelTask[]) expect(TASK_DEFAULTS[task].speed).toBe('standard')
+    expect(buildParams(req)).not.toHaveProperty('speed')
+    expect(taskConfig('ask', { AI_SPEED_ASK: 'fast' }).speed).toBe('fast')
+    expect(taskConfig('ask', { AI_SPEED_ASK: 'turbo' }).speed).toBe('standard')
+    // Haiku는 fast mode가 없어서 켜도 보내지 않는다.
+    expect(buildParams(req, taskConfig('ask', { AI_SPEED_ASK: 'fast' }))).not.toHaveProperty('speed')
     const fast = (model: ModelId) => buildParams(req, { ...TASK_DEFAULTS.ask, model, speed: 'fast' }) as unknown as Record<string, unknown>
     expect(fast('claude-opus-5-5').speed).toBe('fast')
     expect(fast('claude-sonnet-5-5')).not.toHaveProperty('speed')
@@ -263,7 +280,7 @@ describe('createCallModel: 조금씩 받기', () => {
       model: 'claude-sonnet-5-5',
       content: [{ type: 'text', text: '{"answer":"외식 날은 ' }, { type: 'fallback' }, { type: 'text', text: '괜찮아요."}' }],
     })
-    const out = await createCallModel(neverParse, stream)({ request: sampleRequests.ask, userId: 'u', onPartial: () => {} })
+    const out = await createCallModel(neverParse, stream, OPUS_ENV)({ request: sampleRequests.ask, userId: 'u', onPartial: () => {} })
     expect(out).toEqual({ ok: true, result: { answer: '외식 날은 괜찮아요.' } })
     expect(JSON.parse(logs[0])).toMatchObject({ model: MODEL, servedBy: 'claude-sonnet-5-5' })
   })
@@ -426,9 +443,11 @@ describe('실제 SDK 클라이언트로 조금씩 받기(네트워크는 가짜)
       return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream', 'request-id': 'req_1' } })
     }
     const client = new Anthropic({ apiKey: 'sk-test', maxRetries: 0, fetch: fetchFake as typeof fetch })
+    // 서버 쪽 대체 모델까지 함께 확인하려고 Opus 설정으로 보낸다.
     const call = createCallModel(
       (params, options) => client.beta.messages.parse(params, options),
       (params, options) => client.beta.messages.stream(params, options),
+      OPUS_ENV,
     )
     return { call, sent }
   }

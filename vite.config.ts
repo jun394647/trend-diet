@@ -5,6 +5,8 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   // 상대 경로로 빌드해 GitHub Pages의 하위 경로에서도 그대로 동작하게 한다.
   base: './',
+  // 설정 화면에 보여 줄 빌드 시각. 지금 어떤 버전이 떠 있는지 확인하는 용도다.
+  define: { __BUILD_TIME__: JSON.stringify(new Date().toISOString()) },
   plugins: [
     react(),
     VitePWA({

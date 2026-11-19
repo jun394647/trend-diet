@@ -477,6 +477,9 @@ export default function Settings() {
           </li>
           <li>소비 칼로리와 목표 칼로리는 기록으로 계산한 추정치이며 의학적 조언이 아니에요. 건강에 걱정되는 점이 있으면 전문가와 상담해 주세요.</li>
         </ul>
+        <p className="small muted" data-testid="build-version">
+          버전 {formatDateTime(__BUILD_TIME__)}
+        </p>
       </section>
     </main>
   )

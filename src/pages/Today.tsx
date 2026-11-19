@@ -9,6 +9,7 @@ import '../components/today/shared.css'
 import WeekStrip from '../components/today/WeekStrip'
 import { addDays, formatKorean, formatShort, today } from '../lib/date'
 import { currentPlan } from '../lib/plan'
+import { mySuggestions, type Suggestion } from '../lib/quickAdd'
 import { isBackupDue, isCheckinDue, kcalOn, mealsOn } from '../lib/selectors'
 import { intakeState, phaseOf, targetRange, weekOfPhase, weekStart, weekSummary } from '../lib/sustain'
 import { useStore } from '../store'
@@ -31,6 +32,9 @@ export default function Today() {
   const synced = useSync((s) => s.email !== null && s.conflict === null)
   const syncConflict = useSync((s) => s.conflict !== null)
   const removeMeal = useStore((s) => s.removeMeal)
+  const favorites = useStore((s) => s.favorites)
+  const addMeal = useStore((s) => s.addMeal)
+  const logFavorite = useStore((s) => s.logFavorite)
 
   const todayStr = today()
   const [date, setDate] = useState<DateStr>(todayStr)
@@ -48,6 +52,9 @@ export default function Today() {
     () => isBackupDue(lastBackupAt, weights.length + meals.length > 0, new Date()),
     [lastBackupAt, weights.length, meals.length],
   )
+
+  // 가장 자주 먹는 것 몇 가지는 시트를 열지 않고 바로 기록할 수 있게 한다.
+  const quick = useMemo(() => mySuggestions({ meals, favorites }, '', 4), [meals, favorites])
 
   const target = plan?.targetKcal ?? 0
   const range = targetRange(target)
@@ -70,6 +77,16 @@ export default function Today() {
   function go(next: DateStr) {
     setDate(next > todayStr ? todayStr : next)
     setError(null)
+  }
+
+  async function onQuickLog(s: Suggestion) {
+    setError(null)
+    try {
+      if (s.favoriteId) await logFavorite(s.favoriteId, date)
+      else await addMeal({ date, kcal: s.kcal, name: s.name, source: 'favorite' })
+    } catch {
+      setError('기록하지 못했어요. 다시 시도해 주세요.')
+    }
   }
 
   async function onRemoveMeal(id: string) {
@@ -188,6 +205,23 @@ export default function Today() {
       <button type="button" className="btn btn--primary btn--block btn--lg" onClick={() => setSheetOpen(true)}>
         식사 추가
       </button>
+
+      {quick.length > 0 && (
+        <div className="quick" role="group" aria-label="자주 먹는 것 바로 기록">
+          {quick.map((s) => (
+            <button
+              key={`${s.name}|${s.kcal}`}
+              type="button"
+              className="quick-btn"
+              aria-label={`${s.name} ${fmtKcal(s.kcal)} kcal 바로 기록`}
+              onClick={() => void onQuickLog(s)}
+            >
+              <span className="quick-name">{s.name}</span>
+              <span className="quick-kcal num">{fmtKcal(s.kcal)}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <section className="card" aria-labelledby="meals-card-title">
         <div className="section-head">

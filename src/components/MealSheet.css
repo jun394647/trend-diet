@@ -176,3 +176,12 @@
   color: var(--text-2);
   white-space: nowrap;
 }
+
+/* 한 칸 입력으로 바뀐 뒤 추가된 것들 */
+.meal-sheet section > .card-title {
+  margin-bottom: 4px;
+}
+
+.entry-source {
+  margin-top: 10px;
+}

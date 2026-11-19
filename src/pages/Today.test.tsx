@@ -48,22 +48,20 @@ describe('Today', () => {
     renderToday()
     fireEvent.click(screen.getByRole('button', { name: '식사 추가' }))
     const dialog = screen.getByRole('dialog', { name: '식사 추가' })
-    fireEvent.change(within(dialog).getByLabelText('칼로리 (kcal)'), { target: { value: '500' } })
-    fireEvent.change(within(dialog).getByLabelText('이름 (선택)'), { target: { value: '점심' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: '기록하기' }))
+    fireEvent.change(within(dialog).getByLabelText('음식 이름이나 칼로리'), { target: { value: '점심 500' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '점심 · 500 kcal 기록하기' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('500')
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
-    expect(screen.getByText('점심')).toBeInTheDocument()
+    expect(screen.getByText('점심', { selector: '.meal-name' })).toBeInTheDocument()
     expect(screen.getByTestId('kcal-status')).toHaveTextContent(`${fmt(target() - 600)}~${fmt(target() - 400)}`)
   })
 
   it('대충 입력은 목표 비율만큼의 칼로리를 추가한다', async () => {
     renderToday()
     fireEvent.click(screen.getByRole('button', { name: '식사 추가' }))
-    fireEvent.click(screen.getByRole('button', { name: '대충 입력' }))
     fireEvent.click(screen.getByRole('button', { name: /보통/ }))
 
     const expected = roughKcal('medium', target())
@@ -71,15 +69,14 @@ describe('Today', () => {
     expect(screen.getByText('대충 입력 · 보통')).toBeInTheDocument()
   })
 
-  it('즐겨찾기를 한 번 누르면 식사 목록에 추가된다', async () => {
+  it('자주 먹는 것은 시트를 열지 않고 한 번 눌러 기록한다', async () => {
     await useStore.getState().addFavorite('바나나', 90)
     renderToday()
-    fireEvent.click(screen.getByRole('button', { name: '식사 추가' }))
-    // 즐겨찾기가 있으면 즐겨찾기 탭이 기본이다.
-    fireEvent.click(screen.getByRole('button', { name: '바나나 90 kcal 기록' }))
+    fireEvent.click(screen.getByRole('button', { name: '바나나 90 kcal 바로 기록' }))
 
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(screen.getByText('바나나')).toBeInTheDocument()
+    await waitFor(() => expect(useStore.getState().meals).toHaveLength(1))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('바나나', { selector: '.meal-name' })).toBeInTheDocument()
     expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('90')
     expect(useStore.getState().favorites[0].useCount).toBe(1)
   })
@@ -144,10 +141,10 @@ describe('Today', () => {
   it('식사를 삭제하면 목록과 합계에서 빠진다', async () => {
     await useStore.getState().addMeal({ date: today(), kcal: 600, name: '저녁', source: 'exact' })
     renderToday()
-    expect(screen.getByText('저녁')).toBeInTheDocument()
+    expect(screen.getByText('저녁', { selector: '.meal-name' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '저녁 600 kcal 삭제' }))
 
-    await waitFor(() => expect(screen.queryByText('저녁')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('저녁', { selector: '.meal-name' })).not.toBeInTheDocument())
     expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('0')
   })
 
@@ -158,8 +155,8 @@ describe('Today', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(formatKorean(yesterday))
 
     fireEvent.click(screen.getByRole('button', { name: '식사 추가' }))
-    fireEvent.change(screen.getByLabelText('칼로리 (kcal)'), { target: { value: '300' } })
-    fireEvent.click(screen.getByRole('button', { name: '기록하기' }))
+    fireEvent.change(screen.getByLabelText('음식 이름이나 칼로리'), { target: { value: '300' } })
+    fireEvent.click(screen.getByRole('button', { name: '300 kcal 기록하기' }))
     await waitFor(() => expect(useStore.getState().meals).toHaveLength(1))
     expect(useStore.getState().meals[0].date).toBe(yesterday)
 

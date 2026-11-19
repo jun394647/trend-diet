@@ -1,0 +1,107 @@
+/**
+ * 빠른 식사 입력을 위한 규칙.
+ *  - 한 칸에 '550'만 적으면 칼로리, '김치찌개 550'처럼 적으면 이름과 칼로리로 읽는다.
+ *  - 전에 기록한 식사는 따로 저장하지 않아도 자주 먹는 순서로 다시 고를 수 있다.
+ */
+import type { DateStr, Favorite, MealEntry } from '../types'
+import { addDays } from './date'
+import { normalize } from './foodSearch'
+
+export const MIN_ENTRY_KCAL = 1
+export const MAX_ENTRY_KCAL = 5000
+
+export type ParsedEntry =
+  | { kind: 'empty' }
+  /** 숫자만 적었다. */
+  | { kind: 'kcal'; kcal: number }
+  /** 이름 뒤에 숫자를 붙였다. */
+  | { kind: 'named'; name: string; kcal: number }
+  /** 숫자가 범위를 벗어났다. */
+  | { kind: 'invalid'; kcal: number }
+  /** 이름만 적었다(검색어). */
+  | { kind: 'text'; text: string }
+
+const inRange = (n: number) => n >= MIN_ENTRY_KCAL && n <= MAX_ENTRY_KCAL
+
+/** 입력 칸의 글자를 해석한다. 숫자의 쉼표와 뒤에 붙인 'kcal', '칼로리'는 무시한다. */
+export function parseEntry(raw: string): ParsedEntry {
+  const s = raw.trim().replace(/\s+/g, ' ')
+  if (s === '') return { kind: 'empty' }
+  const m = /^(?:(.*\S)\s+)?(\d{1,3}(?:,\d{3})+|\d+)\s*(?:kcal|칼로리)?$/i.exec(s)
+  if (!m) return { kind: 'text', text: s }
+  const kcal = Number(m[2].replaceAll(',', ''))
+  const name = m[1]?.trim()
+  if (!inRange(kcal)) return name ? { kind: 'text', text: s } : { kind: 'invalid', kcal }
+  return name ? { kind: 'named', name: name.slice(0, 40), kcal } : { kind: 'kcal', kcal }
+}
+
+export interface Suggestion {
+  name: string
+  kcal: number
+  /** 지금까지 기록한 횟수. */
+  count: number
+  /** 마지막으로 기록한 시각(ISO). */
+  lastAt: string
+  /** 즐겨찾기로 저장된 항목이면 그 id. */
+  favoriteId: string | null
+  /** 먹은 기록에 있는 항목인지. 기록에 없고 저장만 해 둔 항목은 지울 수 있다. */
+  inHistory: boolean
+}
+
+/**
+ * 전에 기록한 식사와 즐겨찾기를 합쳐 자주·최근 먹은 순으로 돌려준다.
+ * 이름이 없는 식사와 대충 입력은 다시 고를 대상이 아니므로 뺀다.
+ * query가 있으면 이름에 그 글자가 들어 있는 것만 남긴다.
+ */
+export function mySuggestions(
+  args: { meals: MealEntry[]; favorites: Favorite[] },
+  query = '',
+  limit = 8,
+): Suggestion[] {
+  // 같은 이름을 여러 칼로리로 기록했으면 이름당 하나만 남긴다: 가장 자주 쓴 값, 같으면 가장 최근 값.
+  const byName = new Map<string, Map<number, { count: number; lastAt: string }>>()
+  for (const m of args.meals) {
+    if (!m.name || m.source === 'rough') continue
+    const variants = byName.get(m.name) ?? new Map<number, { count: number; lastAt: string }>()
+    const v = variants.get(m.kcal) ?? { count: 0, lastAt: '' }
+    v.count++
+    if (m.createdAt > v.lastAt) v.lastAt = m.createdAt
+    variants.set(m.kcal, v)
+    byName.set(m.name, variants)
+  }
+  const map = new Map<string, Suggestion>()
+  for (const [name, variants] of byName) {
+    let kcal = 0
+    let best = { count: 0, lastAt: '' }
+    let total = 0
+    let lastAt = ''
+    for (const [k, v] of variants) {
+      total += v.count
+      if (v.lastAt > lastAt) lastAt = v.lastAt
+      if (v.count > best.count || (v.count === best.count && v.lastAt > best.lastAt)) {
+        best = v
+        kcal = k
+      }
+    }
+    map.set(name, { name, kcal, count: total, lastAt, favoriteId: null, inHistory: true })
+  }
+  for (const f of args.favorites) {
+    const cur = map.get(f.name)
+    if (!cur) {
+      map.set(f.name, { name: f.name, kcal: f.kcal, count: f.useCount, lastAt: f.lastUsedAt, favoriteId: f.id, inHistory: false })
+    } else if (cur.kcal === f.kcal) {
+      cur.favoriteId = f.id
+    }
+  }
+  const q = normalize(query)
+  return [...map.values()]
+    .filter((s) => q === '' || normalize(s.name).includes(q))
+    .sort((a, b) => b.count - a.count || b.lastAt.localeCompare(a.lastAt) || a.name.localeCompare(b.name, 'ko'))
+    .slice(0, limit)
+}
+
+/** date 전날에 기록한 식사. '어제처럼' 한 번에 기록할 때 쓴다. */
+export function previousDayMeals(meals: MealEntry[], date: DateStr): MealEntry[] {
+  const prev = addDays(date, -1)
+  return meals.filter((m) => m.date === prev).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}

@@ -1,29 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { formatKorean } from '../lib/date'
+import { loadFoodDb, type FoodDb } from '../lib/foodDb'
+import { kcalFor, searchFoods, type IndexedFood } from '../lib/foodSearch'
+import { MAX_ENTRY_KCAL, mySuggestions, parseEntry, previousDayMeals, type Suggestion } from '../lib/quickAdd'
 import { ROUGH_PORTIONS, roughKcal } from '../lib/selectors'
-import { targetRange } from '../lib/sustain'
 import type { RoughSize } from '../lib/selectors'
 import { useStore } from '../store'
 import type { DateStr } from '../types'
+import FoodAmount, { fmtAmount } from './FoodAmount'
 import { fmtKcal } from './today/format'
-import FoodSearch from './FoodSearch'
 import { TrashIcon } from './today/icons'
 import './today/shared.css'
 import './MealSheet.css'
 
-type Mode = 'search' | 'exact' | 'favorite' | 'rough'
-
-const MODES: { id: Mode; label: string }[] = [
-  { id: 'favorite', label: '즐겨찾기' },
-  { id: 'search', label: '검색' },
-  { id: 'exact', label: '직접 입력' },
-  { id: 'rough', label: '대충 입력' },
-]
-
 const ROUGH_SIZES: RoughSize[] = ['small', 'medium', 'large']
-const MIN_KCAL = 1
-const MAX_KCAL = 5000
 
 interface Props {
   date: DateStr
@@ -31,43 +22,46 @@ interface Props {
   onClose: () => void
 }
 
+type DbState = { status: 'idle' | 'loading' | 'error' } | { status: 'ready'; db: FoodDb }
+
+function servingLabel(f: IndexedFood): string {
+  return f.servingSize !== null
+    ? `1회 ${fmtAmount(f.servingSize)}${f.unit} · ${fmtKcal(kcalFor(f, f.servingSize))} kcal`
+    : `100${f.unit}당 ${fmtKcal(f.kcalPer100)} kcal`
+}
+
+/**
+ * 식사 추가 시트. 입력 칸 하나로 모든 방식을 처리한다.
+ *  - '550' 또는 '김치찌개 550': 바로 기록
+ *  - '김치찌개': 전에 먹은 것과 음식 DB에서 찾기
+ *  - 비워 두면: 자주 먹는 것, 어제처럼, 대충 기록
+ */
 export default function MealSheet({ date, targetKcal, onClose }: Props) {
+  const meals = useStore((s) => s.meals)
   const favorites = useStore((s) => s.favorites)
   const addMeal = useStore((s) => s.addMeal)
-  const addFavorite = useStore((s) => s.addFavorite)
   const removeFavorite = useStore((s) => s.removeFavorite)
   const logFavorite = useStore((s) => s.logFavorite)
 
-  const [mode, setMode] = useState<Mode>(() => (favorites.length > 0 ? 'favorite' : 'exact'))
-  const [kcalText, setKcalText] = useState('')
-  const [name, setName] = useState('')
-  const [saveFav, setSaveFav] = useState(false)
-  const [kcalError, setKcalError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [picked, setPicked] = useState<IndexedFood | null>(null)
+  const [dbState, setDbState] = useState<DbState>({ status: 'idle' })
   const [error, setError] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const sheetRef = useRef<HTMLDivElement>(null)
-  const kcalRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const onCloseRef = useRef(onClose)
   useEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
 
-  const sortedFavorites = useMemo(
-    () =>
-      [...favorites].sort(
-        (a, b) => b.useCount - a.useCount || b.lastUsedAt.localeCompare(a.lastUsedAt),
-      ),
-    [favorites],
-  )
-
-  // 열릴 때 포커스를 시트 안으로 옮기고, 닫히면 원래 자리로 돌려준다.
+  // 열릴 때 포커스를 입력 칸으로 옮기고, 닫히면 원래 자리로 돌려준다.
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    if (kcalRef.current) kcalRef.current.focus()
+    if (inputRef.current) inputRef.current.focus()
     else sheetRef.current?.focus()
-
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
@@ -84,13 +78,43 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
     }
   }, [])
 
-  // 직접 입력으로 바꾸면 바로 숫자를 칠 수 있게 한다.
-  useEffect(() => {
-    if (mode === 'exact') kcalRef.current?.focus()
-  }, [mode])
+  const entry = useMemo(() => parseEntry(query), [query])
+  const deferredQuery = useDeferredValue(query)
+  const searchText = entry.kind === 'text' ? entry.text : entry.kind === 'named' ? entry.name : ''
 
-  const hasName = name.trim() !== ''
-  const range = targetRange(targetKcal)
+  // 음식 DB는 이름을 처음 적을 때 불러온다.
+  const wantsDb = searchText !== ''
+  const [dbAttempt, setDbAttempt] = useState(0)
+  const dbRequested = useRef(-1)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  useEffect(() => {
+    // 같은 시도를 두 번 시작하지 않는다. 상태가 바뀌어도 진행 중인 요청은 취소하지 않는다.
+    if (!wantsDb || dbRequested.current === dbAttempt) return
+    dbRequested.current = dbAttempt
+    setDbState({ status: 'loading' })
+    loadFoodDb().then(
+      (db) => mounted.current && setDbState({ status: 'ready', db }),
+      () => mounted.current && setDbState({ status: 'error' }),
+    )
+  }, [wantsDb, dbAttempt])
+
+  const mine = useMemo(
+    () => mySuggestions({ meals, favorites }, searchText, searchText === '' ? 8 : 5),
+    [meals, favorites, searchText],
+  )
+  const dbResult = useMemo(() => {
+    const parsed = parseEntry(deferredQuery)
+    const text = parsed.kind === 'text' ? parsed.text : ''
+    return dbState.status === 'ready' && text !== '' ? searchFoods(dbState.db.index, text, 20) : null
+  }, [dbState, deferredQuery])
+  const yesterday = useMemo(() => previousDayMeals(meals, date), [meals, date])
+  const todayHasMeals = useMemo(() => meals.some((m) => m.date === date), [meals, date])
 
   async function run(action: () => Promise<void>) {
     if (busy) return
@@ -105,32 +129,30 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
     }
   }
 
-  function onSubmitExact(e: FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault()
-    const t = kcalText.trim()
-    const kcal = /^\d+$/.test(t) ? Number(t) : NaN
-    if (!(kcal >= MIN_KCAL && kcal <= MAX_KCAL)) {
-      setKcalError(`${MIN_KCAL}~${fmtKcal(MAX_KCAL)} 사이의 숫자로 적어 주세요.`)
-      kcalRef.current?.focus()
-      return
+    if (entry.kind === 'kcal') {
+      void run(() => addMeal({ date, kcal: entry.kcal, source: 'exact' }))
+    } else if (entry.kind === 'named') {
+      void run(() => addMeal({ date, kcal: entry.kcal, name: entry.name, source: 'exact' }))
     }
-    const trimmed = name.trim()
+  }
+
+  function logSuggestion(s: Suggestion) {
+    void run(() =>
+      s.favoriteId ? logFavorite(s.favoriteId, date) : addMeal({ date, kcal: s.kcal, name: s.name, source: 'favorite' }),
+    )
+  }
+
+  function logYesterday() {
     void run(async () => {
-      await addMeal({ date, kcal, name: trimmed || undefined, source: 'exact' })
-      if (saveFav && trimmed) await addFavorite(trimmed, kcal)
+      for (const m of yesterday) await addMeal({ date, kcal: m.kcal, name: m.name, source: m.source })
     })
   }
 
   function onRough(size: RoughSize) {
     const { label } = ROUGH_PORTIONS[size]
-    void run(() =>
-      addMeal({
-        date,
-        kcal: roughKcal(size, targetKcal),
-        name: `대충 입력 · ${label}`,
-        source: 'rough',
-      }),
-    )
+    void run(() => addMeal({ date, kcal: roughKcal(size, targetKcal), name: `대충 입력 · ${label}`, source: 'rough' }))
   }
 
   async function onRemoveFavorite(id: string) {
@@ -143,6 +165,9 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
     }
   }
 
+  const canSubmit = entry.kind === 'kcal' || entry.kind === 'named'
+  const yesterdayKcal = yesterday.reduce((s, m) => s + m.kcal, 0)
+
   return (
     <div
       className="sheet-backdrop"
@@ -150,14 +175,7 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div
-        ref={sheetRef}
-        className="sheet meal-sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-label="식사 추가"
-        tabIndex={-1}
-      >
+      <div ref={sheetRef} className="sheet meal-sheet" role="dialog" aria-modal="true" aria-label="식사 추가" tabIndex={-1}>
         <div className="meal-sheet-head">
           <div>
             <h2 className="meal-sheet-title">식사 추가</h2>
@@ -168,173 +186,191 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
           </button>
         </div>
 
-        <div className="segmented" role="group" aria-label="입력 방식">
-          {MODES.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              aria-pressed={mode === m.id}
-              onClick={() => {
-                setMode(m.id)
-                setConfirmId(null)
-                setError(null)
-              }}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        {mode === 'search' && (
-          <FoodSearch
+        {picked ? (
+          <FoodAmount
+            picked={picked}
             busy={busy}
-            onLog={(meal, saveFavorite) =>
-              void run(async () => {
-                await addMeal({ date, kcal: meal.kcal, name: meal.name, source: 'search' })
-                if (saveFavorite) await addFavorite(meal.name, meal.kcal)
-              })
-            }
+            onBack={() => setPicked(null)}
+            onLog={(meal) => void run(() => addMeal({ date, kcal: meal.kcal, name: meal.name, source: 'search' }))}
           />
-        )}
+        ) : (
+          <>
+            <form className="stack" onSubmit={onSubmit} noValidate>
+              <div className="field">
+                <label htmlFor="meal-entry">음식 이름이나 칼로리</label>
+                <input
+                  ref={inputRef}
+                  id="meal-entry"
+                  className="input"
+                  autoComplete="off"
+                  enterKeyHint={canSubmit ? 'done' : 'search'}
+                  maxLength={60}
+                  placeholder="예: 550 · 김치찌개 550 · 김치찌개"
+                  value={query}
+                  aria-describedby="meal-entry-hint"
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                    setConfirmId(null)
+                    setError(null)
+                  }}
+                />
+              </div>
 
-        {mode === 'exact' && (
-          <form className="stack" onSubmit={onSubmitExact} noValidate>
-            <div className="field">
-              <label htmlFor="meal-kcal">칼로리 (kcal)</label>
-              <input
-                ref={kcalRef}
-                id="meal-kcal"
-                className="input num"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoComplete="off"
-                placeholder="예: 550"
-                value={kcalText}
-                aria-invalid={kcalError ? true : undefined}
-                aria-describedby={kcalError ? 'meal-kcal-error' : undefined}
-                onChange={(e) => {
-                  setKcalText(e.target.value)
-                  setKcalError(null)
-                }}
-              />
-              {kcalError && (
-                <p className="field-error" id="meal-kcal-error" role="alert">
-                  {kcalError}
+              {canSubmit && (
+                <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={busy} data-testid="entry-submit">
+                  {entry.kind === 'named' ? `${entry.name} · ` : ''}
+                  {fmtKcal(entry.kcal)} kcal 기록하기
+                </button>
+              )}
+
+              <p className="small muted" id="meal-entry-hint">
+                {entry.kind === 'empty' && '숫자만 적으면 칼로리로 기록해요. 이름을 적으면 전에 먹은 것과 음식 목록에서 찾아요.'}
+                {entry.kind === 'kcal' && '이름을 붙이려면 김치찌개 550처럼 이름을 앞에 적어 주세요.'}
+                {entry.kind === 'named' && '한 번 기록하면 다음부터 자주 먹는 것에 떠요.'}
+                {entry.kind === 'text' && '칼로리를 알면 이름 뒤에 숫자를 붙여 바로 기록할 수 있어요.'}
+              </p>
+              {entry.kind === 'invalid' && (
+                <p className="field-error" role="alert">
+                  한 번에 1~{fmtKcal(MAX_ENTRY_KCAL)} kcal까지 기록할 수 있어요.
                 </p>
               )}
-            </div>
-            <div className="field">
-              <label htmlFor="meal-name">이름 (선택)</label>
-              <input
-                id="meal-name"
-                className="input"
-                autoComplete="off"
-                maxLength={40}
-                placeholder="예: 김치찌개"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <label className={`meal-check${hasName ? '' : ' meal-check--disabled'}`}>
-              <input
-                type="checkbox"
-                checked={saveFav && hasName}
-                disabled={!hasName}
-                onChange={(e) => setSaveFav(e.target.checked)}
-              />
-              <span>
-                즐겨찾기에 저장
-                {!hasName && <span className="small muted"> · 이름을 적으면 켤 수 있어요</span>}
-              </span>
-            </label>
-            <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={busy}>
-              기록하기
-            </button>
-          </form>
-        )}
+            </form>
 
-        {mode === 'favorite' &&
-          (sortedFavorites.length === 0 ? (
-            <div className="stack">
-              <p className="muted">
-                아직 즐겨찾기가 없어요. 직접 입력에서 이름을 적고 '즐겨찾기에 저장'을 켜면 다음부터
-                한 번에 기록할 수 있어요.
-              </p>
-              <button type="button" className="btn btn--block" onClick={() => setMode('exact')}>
-                직접 입력으로 가기
-              </button>
-            </div>
-          ) : (
-            <ul className="list fav-list">
-              {sortedFavorites.map((f) =>
-                confirmId === f.id ? (
-                  <li key={f.id}>
-                    <div className="fav-confirm">
-                      <span className="fav-confirm-text">'{f.name}' 즐겨찾기를 삭제할까요?</span>
-                      <div className="fav-confirm-actions">
-                        <button type="button" className="btn" onClick={() => setConfirmId(null)}>
-                          취소
-                        </button>
+            {mine.length > 0 && (
+              <section aria-labelledby="mine-title">
+                <h3 className="card-title" id="mine-title">
+                  {searchText === '' ? '자주 먹는 것' : '전에 먹은 것'}
+                </h3>
+                <ul className="list fav-list">
+                  {mine.map((s) =>
+                    s.favoriteId !== null && confirmId === s.favoriteId ? (
+                      <li key={`${s.name}|${s.kcal}`}>
+                        <div className="fav-confirm">
+                          <span className="fav-confirm-text">'{s.name}'을(를) 목록에서 지울까요?</span>
+                          <div className="fav-confirm-actions">
+                            <button type="button" className="btn" onClick={() => setConfirmId(null)}>
+                              취소
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn--danger"
+                              onClick={() => void onRemoveFavorite(s.favoriteId!)}
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    ) : (
+                      <li key={`${s.name}|${s.kcal}`}>
                         <button
                           type="button"
-                          className="btn btn--danger"
-                          onClick={() => void onRemoveFavorite(f.id)}
+                          className="fav-log"
+                          disabled={busy}
+                          aria-label={`${s.name} ${fmtKcal(s.kcal)} kcal 기록`}
+                          onClick={() => logSuggestion(s)}
                         >
-                          삭제
+                          <span className="fav-name">{s.name}</span>
+                          <span className="fav-kcal num">{fmtKcal(s.kcal)} kcal</span>
                         </button>
-                      </div>
-                    </div>
-                  </li>
-                ) : (
-                  <li key={f.id}>
-                    <button
-                      type="button"
-                      className="fav-log"
-                      disabled={busy}
-                      aria-label={`${f.name} ${fmtKcal(f.kcal)} kcal 기록`}
-                      onClick={() => void run(() => logFavorite(f.id, date))}
-                    >
-                      <span className="fav-name">{f.name}</span>
-                      <span className="fav-kcal num">{fmtKcal(f.kcal)} kcal</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`${f.name} 즐겨찾기 삭제`}
-                      onClick={() => setConfirmId(f.id)}
-                    >
-                      <TrashIcon />
-                    </button>
-                  </li>
-                ),
-              )}
-            </ul>
-          ))}
+                        {/* 따로 저장해 둔 항목만 지울 수 있다. 먹은 기록에서 온 항목은 기록이 남아 있는 한 다시 뜬다. */}
+                        {s.favoriteId !== null && !s.inHistory && (
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label={`${s.name} 목록에서 지우기`}
+                            onClick={() => setConfirmId(s.favoriteId)}
+                          >
+                            <TrashIcon />
+                          </button>
+                        )}
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </section>
+            )}
 
-        {mode === 'rough' && (
-          <div className="stack">
-            <div className="rough-grid">
-              {ROUGH_SIZES.map((size) => (
-                <button
-                  key={size}
-                  type="button"
-                  className="rough-btn"
-                  disabled={busy || roughKcal(size, targetKcal) <= 0}
-                  onClick={() => onRough(size)}
-                >
-                  <span className="rough-label">{ROUGH_PORTIONS[size].label}</span>
-                  <span className="rough-kcal num">{fmtKcal(roughKcal(size, targetKcal))} kcal</span>
-                </button>
-              ))}
-            </div>
-            <p className="small muted">
-              하루 목표 범위{' '}
-              <span className="num">
-                {fmtKcal(range.low)}~{fmtKcal(range.high)}
-              </span>{' '}
-              kcal에 맞춰 어림잡은 양이에요. 정확하지 않아도 적어 두면 한 주 평균을 볼 수 있어요.
-            </p>
-          </div>
+            {searchText !== '' && entry.kind === 'text' && (
+              <section aria-labelledby="db-title">
+                <h3 className="card-title" id="db-title">
+                  음식 목록에서 찾기
+                </h3>
+                {dbState.status === 'loading' && <p className="muted">음식 목록을 불러오는 중이에요…</p>}
+                {dbState.status === 'error' && (
+                  <div className="stack">
+                    <p className="field-error" role="alert">
+                      음식 목록을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.
+                    </p>
+                    <button type="button" className="btn" onClick={() => setDbAttempt((n) => n + 1)}>
+                      다시 불러오기
+                    </button>
+                  </div>
+                )}
+                {dbResult && dbResult.total === 0 && (
+                  <p className="muted">
+                    '{searchText}'에 맞는 음식이 없어요. 포장 가공식품은 들어 있지 않아요. 칼로리를 알면 이름 뒤에
+                    숫자를 붙여 주세요.
+                  </p>
+                )}
+                {dbResult && dbResult.items.length > 0 && (
+                  <>
+                    <ul className="list food-results" aria-label="검색 결과">
+                      {dbResult.items.map((f, i) => (
+                        <li key={`${f.name}|${f.tag}|${f.kcalPer100}|${f.servingSize}|${i}`}>
+                          <button type="button" className="food-result" onClick={() => setPicked(f)}>
+                            <span className="food-result-main">
+                              <span className="food-result-name">{f.name}</span>
+                              {f.tag && <span className="food-result-tag">{f.tag}</span>}
+                            </span>
+                            <span className="small muted num">{servingLabel(f)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="small muted entry-source">
+                      {dbResult.total > dbResult.items.length &&
+                        `${dbResult.total.toLocaleString('ko-KR')}건 중 ${dbResult.items.length}건만 보여요. `}
+                      출처: 식품의약품안전처 식품영양성분 데이터({dbState.status === 'ready' && dbState.db.updated} 기준).
+                      조리법과 양에 따라 실제 값은 달라요.
+                    </p>
+                  </>
+                )}
+              </section>
+            )}
+
+            {entry.kind === 'empty' && (
+              <>
+                {yesterday.length > 0 && !todayHasMeals && (
+                  <button type="button" className="btn btn--block" disabled={busy} onClick={logYesterday}>
+                    전날 먹은 {yesterday.length}건 그대로 기록 · {fmtKcal(yesterdayKcal)} kcal
+                  </button>
+                )}
+                <section aria-labelledby="rough-title">
+                  <h3 className="card-title" id="rough-title">
+                    잘 모르겠으면 대충
+                  </h3>
+                  <div className="rough-grid">
+                    {ROUGH_SIZES.map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        className="rough-btn"
+                        disabled={busy || roughKcal(size, targetKcal) <= 0}
+                        onClick={() => onRough(size)}
+                      >
+                        <span className="rough-label">{ROUGH_PORTIONS[size].label}</span>
+                        <span className="rough-kcal num">{fmtKcal(roughKcal(size, targetKcal))} kcal</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="small muted entry-source">
+                    한 끼를 하루 목표의 일부로 어림잡아요. 정확하지 않아도 기록해 두는 편이 좋아요.
+                  </p>
+                </section>
+              </>
+            )}
+          </>
         )}
 
         {error && (

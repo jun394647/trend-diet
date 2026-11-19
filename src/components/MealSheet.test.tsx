@@ -1,148 +1,191 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { addDays, today } from '../lib/date'
+import type { FoodDbFile } from '../lib/foodSearch'
 import { roughKcal } from '../lib/selectors'
 import { useStore } from '../store'
+import type { Profile } from '../types'
 import MealSheet from './MealSheet'
 
-const DATE = '2026-03-10'
-const TARGET = 2000
-
-function renderSheet() {
-  const onClose = vi.fn()
-  render(<MealSheet date={DATE} targetKcal={TARGET} onClose={onClose} />)
-  return onClose
+const file: FoodDbFile = {
+  source: '테스트',
+  updated: '2026-09-29',
+  items: [
+    ['김치찌개', '외식', 61, 400, 'g', 3, 3.8, 3.8],
+    ['바나나 생것', '원재료', 77, null, 'g', 20, 1.1, 0.1],
+    ['카페 라떼', '어느카페', 44, 591, 'ml', 4, 1.9, 2],
+  ],
 }
 
+const profile: Profile = {
+  heightCm: 175,
+  birthYear: 1995,
+  sex: 'M',
+  activityFactor: 1.375,
+  startWeightKg: 80,
+  goalWeightKg: 72,
+  weeklyLossKg: 0.5,
+  createdAt: '2026-01-01T00:00:00.000Z',
+}
+
+let onClose: ReturnType<typeof vi.fn<() => void>>
+const open = () => render(<MealSheet date={today()} targetKcal={2000} onClose={onClose} />)
+const type = (value: string) =>
+  fireEvent.change(screen.getByLabelText('음식 이름이나 칼로리'), { target: { value } })
+const meals = () => useStore.getState().meals
+
 beforeEach(async () => {
+  onClose = vi.fn<() => void>()
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => file })))
   await useStore.getState().resetAll()
+  await useStore.getState().completeOnboarding(profile)
 })
 
-describe('MealSheet', () => {
-  it('즐겨찾기가 없으면 직접 입력으로 열리고 포커스가 시트 안으로 들어간다', () => {
-    renderSheet()
-    const dialog = screen.getByRole('dialog', { name: '식사 추가' })
-    expect(dialog).toHaveAttribute('aria-modal', 'true')
-    expect(screen.getByRole('button', { name: '직접 입력' })).toHaveAttribute('aria-pressed', 'true')
-    expect(dialog.contains(document.activeElement)).toBe(true)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+describe('한 칸 입력', () => {
+  it('숫자만 적고 기록하면 그 칼로리로 기록된다', async () => {
+    open()
+    expect(screen.getByLabelText('음식 이름이나 칼로리')).toHaveFocus()
+    type('550')
+    fireEvent.click(screen.getByRole('button', { name: '550 kcal 기록하기' }))
+    await waitFor(() => expect(meals()).toHaveLength(1))
+    expect(meals()[0]).toMatchObject({ kcal: 550, source: 'exact' })
+    expect(meals()[0].name).toBeUndefined()
+    expect(onClose).toHaveBeenCalled()
   })
 
-  it('직접 입력: 칼로리와 이름으로 식사를 기록하고 닫는다', async () => {
-    const onClose = renderSheet()
-    fireEvent.change(screen.getByLabelText('칼로리 (kcal)'), { target: { value: '550' } })
-    fireEvent.change(screen.getByLabelText('이름 (선택)'), { target: { value: '김치찌개' } })
-    fireEvent.click(screen.getByRole('button', { name: '기록하기' }))
-
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
-    const s = useStore.getState()
-    expect(s.meals).toHaveLength(1)
-    expect(s.meals[0]).toMatchObject({ date: DATE, kcal: 550, name: '김치찌개', source: 'exact' })
-    expect(s.favorites).toHaveLength(0)
+  it('이름 뒤에 숫자를 붙이면 이름과 함께 기록된다', async () => {
+    open()
+    type('김치찌개 550')
+    fireEvent.submit(screen.getByTestId('entry-submit').closest('form')!)
+    await waitFor(() => expect(meals()).toHaveLength(1))
+    expect(meals()[0]).toMatchObject({ name: '김치찌개', kcal: 550 })
   })
 
-  it('직접 입력: 칼로리가 비었거나 범위를 벗어나면 기록하지 않는다', () => {
-    const onClose = renderSheet()
-    fireEvent.click(screen.getByRole('button', { name: '기록하기' }))
-    expect(screen.getByRole('alert')).toBeInTheDocument()
-
-    fireEvent.change(screen.getByLabelText('칼로리 (kcal)'), { target: { value: '5001' } })
-    fireEvent.click(screen.getByRole('button', { name: '기록하기' }))
-    expect(screen.getByRole('alert')).toBeInTheDocument()
-
-    expect(useStore.getState().meals).toHaveLength(0)
-    expect(onClose).not.toHaveBeenCalled()
+  it('범위를 벗어난 숫자는 기록할 수 없고 이유를 알려 준다', () => {
+    open()
+    type('99999')
+    expect(screen.getByRole('alert')).toHaveTextContent('1~5,000 kcal')
+    expect(screen.queryByTestId('entry-submit')).not.toBeInTheDocument()
   })
 
-  it('직접 입력: 즐겨찾기 저장은 이름이 있을 때만 켤 수 있고, 켜면 즐겨찾기도 생긴다', async () => {
-    const onClose = renderSheet()
-    const check = screen.getByRole('checkbox', { name: /즐겨찾기에 저장/ })
-    expect(check).toBeDisabled()
+  it('이름만 적으면 기록 버튼 대신 찾은 결과를 보여 준다', async () => {
+    open()
+    type('김치')
+    expect(screen.queryByTestId('entry-submit')).not.toBeInTheDocument()
+    const results = await screen.findByRole('list', { name: '검색 결과' })
+    expect(within(results).getByRole('button', { name: /김치찌개/ })).toBeInTheDocument()
+  })
+})
 
-    fireEvent.change(screen.getByLabelText('칼로리 (kcal)'), { target: { value: '165' } })
-    fireEvent.change(screen.getByLabelText('이름 (선택)'), { target: { value: '닭가슴살' } })
-    expect(check).toBeEnabled()
-    fireEvent.click(check)
-    fireEvent.click(screen.getByRole('button', { name: '기록하기' }))
-
-    await waitFor(() => expect(onClose).toHaveBeenCalled())
-    const s = useStore.getState()
-    expect(s.meals[0]).toMatchObject({ name: '닭가슴살', kcal: 165, source: 'exact' })
-    expect(s.favorites[0]).toMatchObject({ name: '닭가슴살', kcal: 165 })
+describe('전에 먹은 것', () => {
+  it('한 번 기록한 음식은 따로 저장하지 않아도 자주 먹는 것에 뜨고, 한 번 눌러 다시 기록한다', async () => {
+    await useStore.getState().addMeal({ date: addDays(today(), -3), kcal: 380, name: '닭가슴살 샐러드', source: 'exact' })
+    open()
+    expect(screen.getByRole('heading', { name: '자주 먹는 것' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '닭가슴살 샐러드 380 kcal 기록' }))
+    await waitFor(() => expect(meals()).toHaveLength(2))
+    expect(meals()[1]).toMatchObject({ date: today(), name: '닭가슴살 샐러드', kcal: 380, source: 'favorite' })
   })
 
-  it('즐겨찾기: 많이 쓴 순서로 보이고 한 번 누르면 기록된다', async () => {
-    useStore.setState({
-      favorites: [
-        { id: 'a', name: '바나나', kcal: 90, useCount: 1, lastUsedAt: '2026-03-01T00:00:00.000Z' },
-        { id: 'b', name: '라떼', kcal: 180, useCount: 5, lastUsedAt: '2026-02-01T00:00:00.000Z' },
-        { id: 'c', name: '삶은 달걀', kcal: 70, useCount: 1, lastUsedAt: '2026-03-05T00:00:00.000Z' },
-      ],
-    })
-    const onClose = renderSheet()
-    expect(screen.getByRole('button', { name: '즐겨찾기' })).toHaveAttribute('aria-pressed', 'true')
-
-    const rows = screen.getAllByRole('button', { name: /kcal 기록$/ })
-    expect(rows.map((r) => r.getAttribute('aria-label'))).toEqual([
-      '라떼 180 kcal 기록',
-      '삶은 달걀 70 kcal 기록',
-      '바나나 90 kcal 기록',
-    ])
-
-    fireEvent.click(rows[0])
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
-    const s = useStore.getState()
-    expect(s.meals[0]).toMatchObject({ date: DATE, name: '라떼', kcal: 180, source: 'favorite' })
-    expect(s.favorites.find((f) => f.id === 'b')?.useCount).toBe(6)
+  it('이름을 적으면 전에 먹은 것이 음식 목록보다 먼저 나온다', async () => {
+    await useStore.getState().addMeal({ date: addDays(today(), -3), kcal: 480, name: '집 김치찌개', source: 'exact' })
+    open()
+    type('김치')
+    expect(screen.getByRole('heading', { name: '전에 먹은 것' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '집 김치찌개 480 kcal 기록' })).toBeInTheDocument()
+    await screen.findByRole('list', { name: '검색 결과' })
   })
 
-  it('즐겨찾기: 삭제는 한 번 더 확인한 뒤에 한다', async () => {
+  it('저장만 해 두고 먹은 기록이 없는 항목은 지울 수 있다', async () => {
     await useStore.getState().addFavorite('바나나', 90)
-    const onClose = renderSheet()
-
-    fireEvent.click(screen.getByRole('button', { name: '바나나 즐겨찾기 삭제' }))
-    expect(useStore.getState().favorites).toHaveLength(1)
+    open()
+    fireEvent.click(screen.getByRole('button', { name: '바나나 목록에서 지우기' }))
     fireEvent.click(screen.getByRole('button', { name: '취소' }))
-    expect(screen.getByRole('button', { name: '바나나 90 kcal 기록' })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '바나나 즐겨찾기 삭제' }))
+    expect(useStore.getState().favorites).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: '바나나 목록에서 지우기' }))
     fireEvent.click(screen.getByRole('button', { name: '삭제' }))
     await waitFor(() => expect(useStore.getState().favorites).toHaveLength(0))
-    expect(await screen.findByText(/아직 즐겨찾기가 없어요/)).toBeInTheDocument()
-    expect(onClose).not.toHaveBeenCalled()
-    expect(useStore.getState().meals).toHaveLength(0)
   })
 
-  it.each([
-    ['적게', 'small'],
-    ['보통', 'medium'],
-    ['많이', 'large'],
-  ] as const)('대충 입력: %s를 누르면 목표 비율만큼 기록된다', async (label, size) => {
-    const onClose = renderSheet()
-    fireEvent.click(screen.getByRole('button', { name: '대충 입력' }))
-    const expected = roughKcal(size, TARGET)
-    const btn = screen.getByRole('button', { name: new RegExp(`^${label}`) })
-    expect(btn).toHaveTextContent(`${expected.toLocaleString('ko-KR')} kcal`)
-    fireEvent.click(btn)
-
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
-    expect(useStore.getState().meals[0]).toMatchObject({
-      date: DATE,
-      kcal: expected,
-      name: `대충 입력 · ${label}`,
-      source: 'rough',
-    })
+  it('전날 먹은 것을 한 번에 그대로 기록한다', async () => {
+    const y = addDays(today(), -1)
+    await useStore.getState().addMeal({ date: y, kcal: 600, name: '점심', source: 'exact' })
+    await useStore.getState().addMeal({ date: y, kcal: 700, name: '저녁', source: 'exact' })
+    open()
+    fireEvent.click(screen.getByRole('button', { name: /전날 먹은 2건 그대로 기록 · 1,300 kcal/ }))
+    await waitFor(() => expect(meals().filter((m) => m.date === today())).toHaveLength(2))
+    expect(meals().filter((m) => m.date === today()).map((m) => m.name)).toEqual(['점심', '저녁'])
   })
 
-  it('Escape, 닫기 버튼, 바깥 영역을 누르면 닫힌다', () => {
-    const onClose = renderSheet()
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(onClose).toHaveBeenCalledTimes(1)
+  it('오늘 이미 기록이 있으면 전날 그대로 기록을 권하지 않는다', async () => {
+    await useStore.getState().addMeal({ date: addDays(today(), -1), kcal: 600, name: '점심', source: 'exact' })
+    await useStore.getState().addMeal({ date: today(), kcal: 300, name: '아침', source: 'exact' })
+    open()
+    expect(screen.queryByRole('button', { name: /전날 먹은/ })).not.toBeInTheDocument()
+  })
+})
 
+describe('음식 목록에서 찾기', () => {
+  it('고르면 1회 제공량 기준으로 기록된다', async () => {
+    open()
+    type('김치')
+    fireEvent.click(await screen.findByRole('button', { name: /김치찌개/ }))
+    expect(screen.getByLabelText('먹은 양 (g)')).toHaveValue('400')
+    expect(screen.getByTestId('food-kcal')).toHaveTextContent('244 kcal')
+    fireEvent.click(screen.getByRole('button', { name: '기록하기' }))
+    await waitFor(() => expect(meals()).toHaveLength(1))
+    expect(meals()[0]).toMatchObject({ name: '김치찌개', kcal: 244, source: 'search' })
+  })
+
+  it('양을 바꾸면 칼로리가 따라 바뀐다', async () => {
+    open()
+    type('라떼')
+    fireEvent.click(await screen.findByRole('button', { name: /카페 라떼/ }))
+    fireEvent.click(screen.getByRole('button', { name: '반' }))
+    expect(screen.getByLabelText('먹은 양 (ml)')).toHaveValue('295.5')
+    expect(screen.getByTestId('food-kcal')).toHaveTextContent('130 kcal')
+    fireEvent.change(screen.getByLabelText('먹은 양 (ml)'), { target: { value: 'abc' } })
+    fireEvent.click(screen.getByRole('button', { name: '기록하기' }))
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(meals()).toHaveLength(0)
+  })
+
+  it('다른 음식 찾기를 누르면 적어 둔 검색어로 돌아간다', async () => {
+    open()
+    type('바나나')
+    fireEvent.click(await screen.findByRole('button', { name: /바나나 생것/ }))
+    expect(screen.getByLabelText('먹은 양 (g)')).toHaveValue('100')
+    fireEvent.click(screen.getByRole('button', { name: '다른 음식 찾기' }))
+    expect(screen.getByLabelText('음식 이름이나 칼로리')).toHaveValue('바나나')
+  })
+
+  it('맞는 음식이 없으면 숫자를 붙이라고 안내한다', async () => {
+    open()
+    type('없는음식')
+    expect(await screen.findByText(/맞는 음식이 없어요/)).toBeInTheDocument()
+  })
+})
+
+describe('대충 기록과 닫기', () => {
+  it('대충 기록은 하루 목표의 비율로 기록한다', async () => {
+    open()
+    fireEvent.click(screen.getByRole('button', { name: /^보통/ }))
+    await waitFor(() => expect(meals()).toHaveLength(1))
+    expect(meals()[0]).toMatchObject({ kcal: roughKcal('medium', 2000), name: '대충 입력 · 보통', source: 'rough' })
+  })
+
+  it('닫기 버튼, Esc, 바깥 누르기로 닫힌다', () => {
+    open()
     fireEvent.click(screen.getByRole('button', { name: '닫기' }))
-    expect(onClose).toHaveBeenCalledTimes(2)
-
-    const dialog = screen.getByRole('dialog')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    const dialog = screen.getByRole('dialog', { name: '식사 추가' })
+    fireEvent.click(dialog.parentElement!)
+    expect(onClose).toHaveBeenCalledTimes(3)
     fireEvent.click(dialog)
-    expect(onClose).toHaveBeenCalledTimes(2)
-    fireEvent.click(dialog.parentElement as HTMLElement)
     expect(onClose).toHaveBeenCalledTimes(3)
   })
 })

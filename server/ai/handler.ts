@@ -9,6 +9,8 @@ import {
   type AiErrorCode,
   type AiRequest,
   type AiResponse,
+  type AiResultMap,
+  type AiTask,
   type AiStatus,
   type AiUsage,
 } from '../../src/ai/contract.ts'
@@ -162,7 +164,8 @@ async function handlePost(request: Request, deps: AiDeps): Promise<Response> {
     outcome = { ok: false, error: 'failed' }
   }
   if (!outcome.ok) return fail(outcome.error, usage)
-  const body: AiResponse = { ok: true, result: outcome.result, usage }
+  // 이 경로로 오는 요청은 브라우저 계약의 task뿐이라 결과도 그 범위 안이다(서버 전용 task는 여기로 오지 않는다).
+  const body: AiResponse = { ok: true, result: outcome.result as AiResultMap[AiTask], usage }
   return json(body)
 }
 

@@ -14,6 +14,37 @@ export interface Prompt {
 
 type RequestOf<T extends AiRequest['task']> = Extract<AiRequest, { task: T }>
 
+/**
+ * 코치가 먼저 건네는 한마디에 쓰는 숫자들. 서버가 앱과 같은 규칙(src/lib/sustain.ts)으로 미리 셈해서 넘긴다.
+ * state: in=범위 안, over=범위보다 많음, under=범위보다 적음, none=기록 없음.
+ */
+export interface NudgeFacts {
+  date: string
+  weekday: string
+  rangeName: string
+  yesterday: { date: string; kcal: number | null; state: 'in' | 'over' | 'under' | 'none' }
+  today: { kcal: number; mealCount: number; state: 'in' | 'over' | 'under' }
+  /** 이번 주(월~일) 지금까지. todayExcluded면 아직 다 먹지 않은 오늘을 평균에서 뺐다. */
+  week: { loggedDays: number; avgDays: number; avgKcal: number | null; avgState: 'in' | 'over' | 'under' | 'none'; todayExcluded: boolean }
+  /** 월요일 아침에만 있다: 막 끝난 지난주. */
+  lastWeek: { loggedDays: number; avgKcal: number | null; avgState: 'in' | 'over' | 'under' | 'none'; trendChangeKg: number | null } | null
+  checkinDue: boolean
+}
+
+/**
+ * 서버만 쓰는 일. 브라우저가 부르는 계약(AiRequest)에는 없어서 /api/ai로는 요청할 수 없다.
+ * 예약 작업이 디스코드로 보내는 아침·저녁 한마디를 만든다.
+ */
+export interface NudgeRequest {
+  task: 'nudge'
+  slot: 'morning' | 'evening'
+  context: CoachContext
+  facts: NudgeFacts
+}
+
+export type ModelRequest = AiRequest | NudgeRequest
+export type ModelTask = ModelRequest['task']
+
 // ── 시스템 프롬프트 ─────────────────────────────────────────────
 
 const BASE = `이 대화는 '추세 다이어트'라는 한국어 식단 기록 앱 안에서 일어납니다. 사용자는 체중을 천천히, 오래 계속할 수 있는 방식으로 관리하려는 일반 성인이고, 당신이 쓴 글은 앱 화면에 그대로 표시됩니다.
@@ -91,6 +122,22 @@ const SYSTEM_ASK = `${BASE}
 평이한 한국어 줄글로, 보통 2~6문장으로 답합니다. 질문에 대한 답부터 말하고, 사용자의 숫자(목표 범위, 추세, 오늘 먹은 양)가 답에 도움이 되면 구체적으로 씁니다. 기록에 없는 것은 아는 척하지 않습니다.
 
 진단, 약, 극단적인 식이요법(단식, 초저열량 식단 등)에 관한 요청은 의사나 영양사 같은 전문가와 상의하라는 한 문장으로 선을 긋고, 그 질문 안에서 도울 수 있는 부분은 그대로 돕습니다.`
+
+const SYSTEM_NUDGE = `${BASE}
+
+이번 일: 사용자가 묻지 않았는데 코치가 먼저 건네는 짧은 한마디를 message에 씁니다. 이 글은 앱 화면이 아니라 디스코드 개인 메시지로 하루에 두 번(아침, 저녁) 전달됩니다. 어느 쪽인지는 slot으로 주어집니다.
+
+slot이 morning이면: 어제가 범위에 비해 어땠는지, 이번 주 평균이 지금까지 어떤지, 오늘의 범위를 알려 주고, 오늘 해 볼 만한 작고 구체적인 것 한 가지를 권합니다. 권하는 것은 해도 되고 안 해도 되는 것으로 씁니다. facts.lastWeek가 있으면(한 주가 막 바뀐 월요일 아침) 지난주 평균과 추세 체중의 변화를 한 문장으로 덧붙입니다. facts.checkinDue가 true면 앱에서 주간 체크인을 할 때가 됐다는 것을 한 구절로만 언급합니다.
+
+slot이 evening이면: 오늘 기록한 식사가 없으면(facts.today.mealCount가 0) 먹은 것을 대충이라도 적어 두자고 가볍게 권하고, 디스코드에서 /먹었어 명령으로 한 줄만 보내면 된다는 것을 알려 줍니다. 미안해하게 만들지 않습니다. 기록이 있으면 오늘이 범위에 비해 어디쯤인지와 이번 주 평균만 말하고, 다른 이야기는 덧붙이지 않습니다.
+
+숫자는 facts와 기록 요약에 주어진 것을 그대로 씁니다. 평균은 이미 셈해 두었으니 다시 셈하지 않습니다. 어제나 오늘 기록이 없으면 없다고만 말합니다.
+
+매일 받는 글이라 같은 문장이 되풀이되면 금방 읽지 않게 됩니다. 날짜와 요일(facts.date, facts.weekday)을 실마리로 삼아 첫 문장과 글의 짜임을 날마다 다르게 쓰되, 기록에 없는 일을 지어내지는 않습니다.
+
+기간을 존중합니다. 유지 휴식 중이면 유지 범위 근처로 먹는 것이 목표이고 감량 이야기는 하지 않습니다. 많이 먹은 날을 다음 날 덜 먹어서 메우라고 하지 않고, 의지나 노력을 평가하는 말도 하지 않습니다.
+
+한글 350자 안쪽의 줄글로 씁니다. 제목이나 목록 없이 두세 문단 이내로 씁니다.`
 
 // ── 기록 요약(user 턴에 넣는 부분) ─────────────────────────────────
 
@@ -206,7 +253,23 @@ export function buildAskPrompt(req: RequestOf<'ask'>): Prompt {
   }
 }
 
-export function buildPrompt(req: AiRequest): Prompt {
+const FACTS_LEGEND =
+  'facts 범례: state와 avgState는 in=범위 안, over=범위보다 많음, under=범위보다 적음, none=기록 없음 · yesterday=어제 · today=오늘 지금까지 · week=이번 주(월~일) 지금까지, todayExcluded가 true면 아직 다 먹지 않은 오늘을 평균에서 뺐음 · lastWeek=막 끝난 지난주(월요일 아침에만 있음), trendChangeKg=그 한 주 동안 추세 체중의 변화(음수면 줄었음) · checkinDue=앱의 주간 체크인을 할 때가 됐는지'
+
+export function buildNudgePrompt(req: NudgeRequest): Prompt {
+  const ask = req.slot === 'morning' ? '오늘 아침에 건넬 한마디를 써 주세요.' : '오늘 저녁에 건넬 한마디를 써 주세요.'
+  return {
+    system: SYSTEM_NUDGE,
+    messages: [
+      {
+        role: 'user',
+        content: `${contextBlock(req.context)}\n\n${FACTS_LEGEND}\nfacts: ${JSON.stringify(req.facts)}\n\nslot: ${req.slot}\n${ask}`,
+      },
+    ],
+  }
+}
+
+export function buildPrompt(req: ModelRequest): Prompt {
   switch (req.task) {
     case 'meal-text':
       return buildMealTextPrompt(req)
@@ -218,5 +281,7 @@ export function buildPrompt(req: AiRequest): Prompt {
       return buildSuggestPrompt(req)
     case 'ask':
       return buildAskPrompt(req)
+    case 'nudge':
+      return buildNudgePrompt(req)
   }
 }

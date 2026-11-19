@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_DAILY_LIMIT, type AiErrorBody, type AiResponse, type AiStatus } from '../../src/ai/contract.ts'
+import { DEFAULT_DAILY_LIMIT, type AiErrorBody, type AiResponse, type AiStatus, type AiTask } from '../../src/ai/contract.ts'
 import { TASKS, sampleRequests, sampleResults } from './fixtures.ts'
 import { dailyLimit, handleAi, type AiDeps, type Env } from './handler.ts'
 import type { CallModel } from './model.ts'
@@ -36,7 +36,7 @@ function setup(o: Setup = {}) {
     }
     throw new Error(`unexpected fetch: ${url}`)
   })
-  const callModel = vi.fn<CallModel>(o.callModel ?? (async ({ request }) => ({ ok: true, result: sampleResults[request.task] })))
+  const callModel = vi.fn<CallModel>(o.callModel ?? (async ({ request }) => ({ ok: true, result: sampleResults[request.task as AiTask] })))
   const deps: AiDeps = { env: o.env ?? ENV, fetch: fetchFake as unknown as typeof fetch, callModel }
   const usageCalls = () => calls.filter((c) => c.url.endsWith('/rpc/ai_take'))
   const authCalls = () => calls.filter((c) => c.url.endsWith('/auth/v1/user'))

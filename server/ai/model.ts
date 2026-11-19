@@ -4,17 +4,28 @@
  */
 import Anthropic from '@anthropic-ai/sdk'
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
+import { z } from 'zod'
 import {
   AnswerSchema,
   MealEstimateSchema,
   SuggestionsSchema,
   WeekReviewSchema,
   type AiErrorCode,
-  type AiRequest,
   type AiResultMap,
-  type AiTask,
 } from '../../src/ai/contract.ts'
-import { buildPrompt } from './prompts.ts'
+import { buildPrompt, type ModelRequest, type ModelTask } from './prompts.ts'
+
+/** 코치가 먼저 건네는 한마디(서버 전용 task 'nudge')의 응답. */
+export const NudgeSchema = z.object({
+  /** 디스코드로 그대로 보낼 한국어 줄글. */
+  message: z.string(),
+})
+export type Nudge = z.infer<typeof NudgeSchema>
+
+/** task별 결과. 브라우저 계약의 다섯 가지에 서버 전용 task를 더한 것. */
+export interface ModelResultMap extends AiResultMap {
+  nudge: Nudge
+}
 
 /** 쓰는 모델. 바꿀 때는 여기 한 곳만 고친다. */
 export const MODEL = 'claude-opus-5-5'
@@ -26,12 +37,13 @@ export const FALLBACK_BETA = 'server-side-fallback-2026-07-01'
 export const ATTEMPT_TIMEOUT_MS = 40_000
 export const TOTAL_TIMEOUT_MS = 50_000
 
-export const EFFORT: Record<AiTask, 'low' | 'medium'> = {
+export const EFFORT: Record<ModelTask, 'low' | 'medium'> = {
   'meal-text': 'low',
   'meal-photo': 'low',
   suggest: 'low',
   'week-review': 'medium',
   ask: 'medium',
+  nudge: 'low',
 }
 
 const SCHEMAS = {
@@ -40,13 +52,14 @@ const SCHEMAS = {
   'week-review': WeekReviewSchema,
   suggest: SuggestionsSchema,
   ask: AnswerSchema,
+  nudge: NudgeSchema,
 } as const
 
 export interface CallModelArgs {
-  request: AiRequest
+  request: ModelRequest
   userId: string
 }
-export type ModelOutcome = { ok: true; result: AiResultMap[AiTask] } | { ok: false; error: AiErrorCode }
+export type ModelOutcome = { ok: true; result: ModelResultMap[ModelTask] } | { ok: false; error: AiErrorCode }
 export type CallModel = (args: CallModelArgs) => Promise<ModelOutcome>
 
 /** 테스트에서 가짜로 바꿔 끼우는 부분. 실제로는 client.beta.messages.parse다. */
@@ -60,7 +73,7 @@ export interface ParsedLike {
 }
 export type ParseFn = (params: ParseParams, options: { signal: AbortSignal }) => Promise<ParsedLike>
 
-export function buildParams(request: AiRequest): ParseParams {
+export function buildParams(request: ModelRequest): ParseParams {
   const { system, messages } = buildPrompt(request)
   return {
     model: MODEL,
@@ -91,7 +104,7 @@ export function mapSdkError(e: unknown): AiErrorCode {
 const roundTo10 = (n: number): number => Math.max(0, Math.round(n / 10) * 10)
 
 /** 스키마로 한 번 더 확인하고, 숫자와 이름을 계약에 맞게 다듬는다. 맞지 않으면 null. */
-export function tidyResult(task: AiTask, parsed: unknown): AiResultMap[AiTask] | null {
+export function tidyResult(task: ModelTask, parsed: unknown): ModelResultMap[ModelTask] | null {
   switch (task) {
     case 'meal-text':
     case 'meal-photo': {
@@ -114,6 +127,10 @@ export function tidyResult(task: AiTask, parsed: unknown): AiResultMap[AiTask] |
     case 'ask': {
       const r = AnswerSchema.safeParse(parsed)
       return r.success && r.data.answer.trim() ? r.data : null
+    }
+    case 'nudge': {
+      const r = NudgeSchema.safeParse(parsed)
+      return r.success && r.data.message.trim() ? { message: r.data.message.trim() } : null
     }
   }
 }

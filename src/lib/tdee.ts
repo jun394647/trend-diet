@@ -1,6 +1,6 @@
-import type { DateStr, MealEntry, Profile, Sex, WeightEntry } from '../types'
-import { addDays, diffDays } from './date'
-import { computeTrend } from './trend'
+import type { DateStr, MealEntry, Profile, Sex, WeightEntry } from '../types.ts'
+import { addDays, diffDays } from './date.ts'
+import { computeTrend } from './trend.ts'
 
 /** 체지방 1kg에 해당하는 열량 근사값. */
 export const KCAL_PER_KG = 7700

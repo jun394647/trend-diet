@@ -5,11 +5,11 @@
  *  - 감량 기간이 길어지면 유지 기간으로 쉬어 가고, 목표에 닿으면 유지로 넘어간다.
  *  - 힘들어 보이면 칼로리를 더 깎는 대신 속도를 늦추는 선택지를 준다.
  */
-import type { Checkin, DateStr, MealEntry, Phase, Profile, WeightEntry } from '../types'
-import { addDays, diffDays, parseDate } from './date'
-import { latestCheckin } from './selectors'
-import { computeTarget, estimateTdee, type TdeeEstimate } from './tdee'
-import { computeTrend, trendAt } from './trend'
+import type { Checkin, DateStr, MealEntry, Phase, Profile, WeightEntry } from '../types.ts'
+import { addDays, diffDays, parseDate } from './date.ts'
+import { latestCheckin } from './selectors.ts'
+import { computeTarget, estimateTdee, type TdeeEstimate } from './tdee.ts'
+import { computeTrend, trendAt } from './trend.ts'
 
 /** 목표 칼로리 위아래로 이만큼은 목표 범위 안으로 본다. */
 export const TARGET_BAND = 100

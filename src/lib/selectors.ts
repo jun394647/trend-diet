@@ -1,5 +1,5 @@
-import type { Checkin, DateStr, MealEntry, WeightEntry } from '../types'
-import { addDays, diffDays } from './date'
+import type { Checkin, DateStr, MealEntry, WeightEntry } from '../types.ts'
+import { addDays, diffDays } from './date.ts'
 
 /** 대충 입력의 크기별 비율(하루 목표 대비). */
 export const ROUGH_PORTIONS = {

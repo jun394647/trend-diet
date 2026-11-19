@@ -1,5 +1,5 @@
-import type { DateStr, WeightEntry } from '../types'
-import { diffDays } from './date'
+import type { DateStr, WeightEntry } from '../types.ts'
+import { diffDays } from './date.ts'
 
 export interface TrendPoint {
   date: DateStr

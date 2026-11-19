@@ -1,10 +1,10 @@
-import { addDays, parseDate } from '../lib/date'
-import { currentPlan } from '../lib/plan'
-import { mySuggestions } from '../lib/quickAdd'
-import { effectiveWeeklyLoss, phaseOf, recentWeeklyRate, targetRange, weekOfPhase } from '../lib/sustain'
-import { computeTrend, trendAt } from '../lib/trend'
-import type { Checkin, DateStr, Favorite, MealEntry, Profile, WeightEntry } from '../types'
-import type { CoachContext } from './contract'
+import { addDays, parseDate } from '../lib/date.ts'
+import { currentPlan } from '../lib/plan.ts'
+import { mySuggestions } from '../lib/quickAdd.ts'
+import { effectiveWeeklyLoss, phaseOf, recentWeeklyRate, targetRange, weekOfPhase } from '../lib/sustain.ts'
+import { computeTrend, trendAt } from '../lib/trend.ts'
+import type { Checkin, DateStr, Favorite, MealEntry, Profile, WeightEntry } from '../types.ts'
+import type { CoachContext } from './contract.ts'
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 

@@ -57,7 +57,7 @@ describe('buildParams', () => {
   })
 
   it('effort는 가벼운 일에 low, 돌아보기와 질문에 medium이다', () => {
-    expect(EFFORT).toEqual({ 'meal-text': 'low', 'meal-photo': 'low', suggest: 'low', 'week-review': 'medium', ask: 'medium' })
+    expect(EFFORT).toEqual({ 'meal-text': 'low', 'meal-photo': 'low', suggest: 'low', 'week-review': 'medium', ask: 'medium', nudge: 'low' })
   })
 })
 

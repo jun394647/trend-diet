@@ -25,6 +25,8 @@
   "include": [
     "api",
     "server",
-    "src/ai/contract.ts"
+    "src/ai/contract.ts",
+    "src/ai/context.ts",
+    "src/types.ts"
   ]
 }

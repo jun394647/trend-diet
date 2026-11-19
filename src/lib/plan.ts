@@ -1,8 +1,8 @@
-import type { Checkin, DateStr, Profile } from '../types'
-import { parseDate } from './date'
-import { latestCheckin } from './selectors'
-import { effectiveWeeklyLoss } from './sustain'
-import { computeTarget, initialTdee } from './tdee'
+import type { Checkin, DateStr, Profile } from '../types.ts'
+import { parseDate } from './date.ts'
+import { latestCheckin } from './selectors.ts'
+import { effectiveWeeklyLoss } from './sustain.ts'
+import { computeTarget, initialTdee } from './tdee.ts'
 
 export interface Plan {
   tdee: number

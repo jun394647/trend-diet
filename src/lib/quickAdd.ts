@@ -3,9 +3,9 @@
  *  - 한 칸에 '550'만 적으면 칼로리, '김치찌개 550'처럼 적으면 이름과 칼로리로 읽는다.
  *  - 전에 기록한 식사는 따로 저장하지 않아도 자주 먹는 순서로 다시 고를 수 있다.
  */
-import type { DateStr, Favorite, MealEntry } from '../types'
-import { addDays } from './date'
-import { normalize } from './foodSearch'
+import type { DateStr, Favorite, MealEntry } from '../types.ts'
+import { addDays } from './date.ts'
+import { normalize } from './foodSearch.ts'
 
 export const MIN_ENTRY_KCAL = 1
 export const MAX_ENTRY_KCAL = 5000

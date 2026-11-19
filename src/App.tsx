@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { HashRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { useAiAvailability } from './ai/useAiAvailability'
 import Checkin from './pages/Checkin'
+import Coach from './pages/Coach'
 import Onboarding from './pages/Onboarding'
 import Settings from './pages/Settings'
 import Today from './pages/Today'
@@ -10,6 +12,8 @@ import { useAi } from './ai/store'
 import { useSync } from './sync/store'
 
 function TabBar() {
+  // AI 기능이 준비되지 않았으면 코치 탭은 아예 보이지 않는다.
+  const showCoach = useAiAvailability() !== 'off'
   return (
     <nav className="tabbar" aria-label="주요 메뉴">
       <div className="tabbar-inner">
@@ -27,6 +31,15 @@ function TabBar() {
           </svg>
           추세
         </NavLink>
+        {showCoach && (
+          <NavLink to="/coach">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-7l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+              <path d="M8.5 9.5h7M8.5 12.5h4" />
+            </svg>
+            코치
+          </NavLink>
+        )}
         <NavLink to="/settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
@@ -62,6 +75,7 @@ export default function App() {
               <Route path="/" element={<Today />} />
               <Route path="/trend" element={<Trend />} />
               <Route path="/checkin" element={<Checkin />} />
+              <Route path="/coach" element={<Coach />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

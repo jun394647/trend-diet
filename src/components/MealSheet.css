@@ -185,3 +185,29 @@
 .entry-source {
   margin-top: 10px;
 }
+
+/* AI로 기록: 사진 버튼과 안내 한 줄 */
+.meal-ai-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.meal-ai-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+/* 파일 고르기는 버튼이 대신 연다. 화면에서는 감춘다. */
+.meal-ai-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

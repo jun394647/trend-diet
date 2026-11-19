@@ -441,7 +441,9 @@ select {
   margin: 0 auto;
   height: var(--tabbar-h);
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* 탭이 셋이든 넷이든 같은 너비로 나눈다. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
 }
 
 .tabbar a {

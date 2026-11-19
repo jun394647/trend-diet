@@ -1,0 +1,58 @@
+.week-review .card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.week-review-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.week-review-ask {
+  align-self: flex-start;
+}
+
+.week-review-headline {
+  font-size: 1.1875rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+
+.week-review-sub {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.week-review-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.week-review-list > li {
+  position: relative;
+  padding-left: 14px;
+}
+
+.week-review-list > li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+
+.week-review-next > p {
+  font-weight: 600;
+}

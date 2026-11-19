@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAiAvailability } from '../ai/useAiAvailability'
+import { AiLoginHint } from '../components/ai/AiBits'
+import SuggestMeals from '../components/ai/SuggestMeals'
 import MealSheet from '../components/MealSheet'
 import WeightCard from '../components/WeightCard'
 import { fmtKcal } from '../components/today/format'
@@ -35,6 +38,7 @@ export default function Today() {
   const favorites = useStore((s) => s.favorites)
   const addMeal = useStore((s) => s.addMeal)
   const logFavorite = useStore((s) => s.logFavorite)
+  const ai = useAiAvailability()
 
   const todayStr = today()
   const [date, setDate] = useState<DateStr>(todayStr)
@@ -252,6 +256,9 @@ export default function Today() {
             ))}
           </ul>
         )}
+        {/* 남은 양을 기준으로 하는 추천이라 오늘을 볼 때만 보여 준다. */}
+        {isToday && plan !== null && ai === 'ready' && <SuggestMeals date={date} />}
+        {isToday && plan !== null && ai === 'login' && <AiLoginHint what="AI 식사 추천 받기" />}
         {error && (
           <p className="field-error" role="alert">
             {error}

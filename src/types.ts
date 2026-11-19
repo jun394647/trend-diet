@@ -30,7 +30,8 @@ export interface WeightEntry {
   kg: number
 }
 
-export type MealSource = 'exact' | 'favorite' | 'rough' | 'search'
+/** 'ai'는 AI가 추정해 기록한 식사. */
+export type MealSource = 'exact' | 'favorite' | 'rough' | 'search' | 'ai'
 
 export interface MealEntry {
   id: string

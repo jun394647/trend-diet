@@ -6,7 +6,16 @@ import { buildCheckinReview } from '../lib/sustain'
 import type { CheckinOption, CheckinOptionId, CheckinReview } from '../lib/sustain'
 import { useStore } from '../store'
 import type { Checkin as CheckinRecord, MealEntry, Profile, WeightEntry } from '../types'
+import { AiError, callAi } from '../ai/client'
+import { useAi } from '../ai/store'
+import { clearWeekReviewCache } from '../components/ai/WeekReviewCache'
+import { useSync } from '../sync/store'
 import Checkin from './Checkin'
+
+vi.mock('../ai/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ai/client')>()),
+  callAi: vi.fn(),
+}))
 
 const base: Profile = {
   heightCm: 175,
@@ -192,5 +201,96 @@ describe('Checkin', () => {
     expect(p?.phase).toBe('maintain')
     expect(p?.breakUntil).toBe(addDays(today(), 14))
     expect(p?.weeklyLossKg).toBe(0.5)
+  })
+})
+
+describe('Checkin · AI 돌아보기', () => {
+  const mockCall = vi.mocked(callAi)
+  const result = {
+    headline: '꾸준히 기록한 2주였어요',
+    wins: ['14일 모두 식사를 기록했어요', '평균 섭취가 범위 안이었어요'],
+    observations: ['주말에 섭취가 조금 늘었어요'],
+    nextStep: '토요일 점심을 미리 정해 두기',
+  }
+
+  function signIn() {
+    useAi.setState({ configured: true, checked: true })
+    useSync.setState({ email: 'a@b.c', conflict: null })
+  }
+
+  beforeEach(() => {
+    mockCall.mockReset()
+    mockCall.mockResolvedValue({ result, usage: { used: 1, limit: 40 } })
+    clearWeekReviewCache()
+  })
+
+  afterEach(() => {
+    useAi.setState({ configured: false, checked: false, usage: null })
+    useSync.setState({ email: null, conflict: null })
+  })
+
+  it('AI가 꺼져 있으면 돌아보기 구획이 없다', () => {
+    seed()
+    renderCheckin()
+    expect(screen.queryByRole('heading', { name: 'AI 돌아보기' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/로그인하면 쓸 수 있어요/)).not.toBeInTheDocument()
+  })
+
+  it('로그인하지 않았으면 한 줄 안내만 보여 준다', () => {
+    seed()
+    useAi.setState({ configured: true, checked: true })
+    renderCheckin()
+    expect(screen.queryByRole('button', { name: 'AI로 돌아보기' })).not.toBeInTheDocument()
+    expect(screen.getByText(/AI로 돌아보기는 로그인하면 쓸 수 있어요/)).toBeInTheDocument()
+  })
+
+  it('버튼을 누르기 전에는 호출하지 않고, 누르면 돌아본 내용을 보여 준다', async () => {
+    seed()
+    signIn()
+    renderCheckin()
+    expect(screen.getByRole('heading', { name: 'AI 돌아보기' })).toBeInTheDocument()
+    expect(mockCall).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI로 돌아보기' }))
+    const body = await screen.findByTestId('week-review')
+    expect(mockCall).toHaveBeenCalledTimes(1)
+    expect(mockCall.mock.calls[0][0]).toMatchObject({ task: 'week-review', context: { today: today() } })
+
+    expect(body).toHaveTextContent('꾸준히 기록한 2주였어요')
+    expect(within(within(body).getByRole('list', { name: '잘된 점' })).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(body).getByRole('list', { name: '눈에 띄는 점' })).toHaveTextContent('주말에 섭취가 조금 늘었어요')
+    expect(within(body).getByText('다음 한 주에 해 볼 것')).toBeInTheDocument()
+    expect(within(body).getByText('토요일 점심을 미리 정해 두기')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'AI로 돌아보기' })).not.toBeInTheDocument()
+    // 돌아보기 구획은 선택지보다 앞에 있다.
+    const choice = screen.getByRole('heading', { name: '다음 한 주' })
+    expect(body.compareDocumentPosition(choice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('같은 날 화면을 나갔다 돌아와도 다시 호출하지 않는다', async () => {
+    seed()
+    signIn()
+    const { unmount } = renderCheckin()
+    fireEvent.click(screen.getByRole('button', { name: 'AI로 돌아보기' }))
+    await screen.findByTestId('week-review')
+    unmount()
+
+    renderCheckin()
+    expect(screen.getByTestId('week-review')).toHaveTextContent('꾸준히 기록한 2주였어요')
+    expect(mockCall).toHaveBeenCalledTimes(1)
+  })
+
+  it('돌아보기가 실패해도 선택지는 그대로 고르고 저장할 수 있다', async () => {
+    const { initial } = seed()
+    signIn()
+    mockCall.mockRejectedValue(new AiError('busy'))
+    renderCheckin()
+    fireEvent.click(screen.getByRole('button', { name: 'AI로 돌아보기' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('지금 응답이 늦어요')
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+
+    fireEvent.click(within(screen.getByTestId('option-keep')).getByRole('radio'))
+    fireEvent.click(screen.getByRole('button', { name: '이대로 유지하기' }))
+    expect(await savedCheckin()).toMatchObject({ kind: 'weekly', targetKcal: initial.targetKcal })
   })
 })

@@ -1,0 +1,114 @@
+.suggest {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.suggest-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  min-height: 48px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.suggest-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.suggest-toggle-label {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.suggest-chevron {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: var(--text-2);
+  transition: transform 0.15s ease;
+}
+
+.suggest-toggle[aria-expanded='true'] .suggest-chevron {
+  transform: rotate(180deg);
+}
+
+.suggest-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+
+.suggest-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggest-optional {
+  font-weight: 400;
+}
+
+.suggest-form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.suggest-form-row > .input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.suggest-form-row > .btn {
+  flex: 0 0 auto;
+  min-height: 48px;
+  white-space: nowrap;
+}
+
+.suggest-list > li {
+  align-items: flex-start;
+}
+
+.suggest-item {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.suggest-item-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+
+.suggest-name {
+  font-weight: 600;
+}
+
+.suggest-kcal {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.suggest-log {
+  flex: 0 0 auto;
+  min-width: 64px;
+  white-space: nowrap;
+}
+
+.suggest-note {
+  font-size: 0.9375rem;
+}

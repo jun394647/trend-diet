@@ -4,7 +4,15 @@ import { addDays, formatKorean, today } from '../lib/date'
 import { roughKcal } from '../lib/selectors'
 import { useStore } from '../store'
 import type { Profile } from '../types'
+import { callAi } from '../ai/client'
+import { useAi } from '../ai/store'
+import { useSync } from '../sync/store'
 import Today from './Today'
+
+vi.mock('../ai/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ai/client')>()),
+  callAi: vi.fn(),
+}))
 
 const profile: Profile = {
   heightCm: 175,
@@ -199,5 +207,106 @@ describe('Today', () => {
     fireEvent.click(screen.getByRole('button', { name: /^월요일/ }))
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(formatKorean(monday))
     expect(screen.getByRole('button', { name: /^월요일/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
+describe('Today · AI 식사 추천', () => {
+  const mockCall = vi.mocked(callAi)
+  const result = {
+    suggestions: [
+      { name: '닭가슴살 샐러드', kcal: 350, why: '남은 양 안에서 단백질을 채울 수 있어요.' },
+      { name: '김치찌개와 밥 반 공기', kcal: 480.4, why: '따뜻하고 남은 범위에 들어와요.' },
+      { name: '그릭요거트', kcal: 150, why: '가볍게 먹기 좋아요.' },
+      { name: '네 번째', kcal: 100, why: '보이지 않아야 해요.' },
+    ],
+    note: '남은 양은 어림잡은 값이에요.',
+  }
+
+  function signIn() {
+    useAi.setState({ configured: true, checked: true })
+    useSync.setState({ email: 'a@b.c', conflict: null })
+  }
+
+  beforeEach(() => {
+    mockCall.mockReset()
+    mockCall.mockResolvedValue({ result, usage: { used: 1, limit: 40 } })
+  })
+
+  afterEach(() => {
+    useAi.setState({ configured: false, checked: false, usage: null })
+    useSync.setState({ email: null, conflict: null })
+  })
+
+  it('AI가 꺼져 있으면 추천 버튼도 로그인 안내도 없다', () => {
+    renderToday()
+    expect(screen.queryByRole('button', { name: /남은 양에 맞는 식사 추천/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/로그인하면 쓸 수 있어요/)).not.toBeInTheDocument()
+  })
+
+  it('로그인하지 않았으면 한 줄 안내만 보여 준다', () => {
+    useAi.setState({ configured: true, checked: true })
+    renderToday()
+    expect(screen.queryByRole('button', { name: /남은 양에 맞는 식사 추천/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/AI 식사 추천 받기는 로그인하면 쓸 수 있어요/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '설정에서 로그인' })).toHaveAttribute('href', '/settings')
+  })
+
+  it('펼쳐서 요청하기 전에는 호출하지 않고, 추천을 누르면 AI 식사로 기록한다', async () => {
+    signIn()
+    renderToday()
+    const toggle = screen.getByRole('button', { name: /남은 양에 맞는 식사 추천/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+    expect(mockCall).not.toHaveBeenCalled()
+
+    // 바라는 점은 비워 둔 채 바로 요청할 수 있다.
+    fireEvent.click(screen.getByRole('button', { name: '추천 받기' }))
+    const list = await screen.findByRole('list', { name: '추천 식사' })
+    expect(mockCall).toHaveBeenCalledTimes(1)
+    const request = mockCall.mock.calls[0][0]
+    expect(request).toMatchObject({ task: 'suggest', context: { today: today(), todayKcal: 0 } })
+    expect(request).not.toHaveProperty('wish')
+
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(list).getByText('남은 양 안에서 단백질을 채울 수 있어요.')).toBeInTheDocument()
+    expect(screen.getByText('남은 양은 어림잡은 값이에요.')).toBeInTheDocument()
+
+    fireEvent.click(within(list).getByRole('button', { name: '김치찌개와 밥 반 공기 480 kcal 기록' }))
+    await waitFor(() => expect(useStore.getState().meals).toHaveLength(1))
+    expect(useStore.getState().meals[0]).toMatchObject({
+      date: today(),
+      name: '김치찌개와 밥 반 공기',
+      kcal: 480,
+      source: 'ai',
+    })
+    expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('480')
+    expect(await within(list).findByRole('button', { name: '김치찌개와 밥 반 공기 480 kcal 기록함' })).toBeDisabled()
+    expect(within(list).getByRole('button', { name: '닭가슴살 샐러드 350 kcal 기록' })).toBeEnabled()
+  })
+
+  it('바라는 점을 적으면 함께 보내고, 다른 추천은 방금 본 것을 피해 다시 묻는다', async () => {
+    signIn()
+    renderToday()
+    fireEvent.click(screen.getByRole('button', { name: /남은 양에 맞는 식사 추천/ }))
+    fireEvent.change(screen.getByLabelText(/바라는 점/), { target: { value: '편의점에서' } })
+    fireEvent.click(screen.getByRole('button', { name: '추천 받기' }))
+    await screen.findByRole('list', { name: '추천 식사' })
+    expect(mockCall.mock.calls[0][0]).toMatchObject({ task: 'suggest', wish: '편의점에서' })
+
+    fireEvent.click(screen.getByRole('button', { name: '다른 추천' }))
+    await waitFor(() => expect(mockCall).toHaveBeenCalledTimes(2))
+    const again = mockCall.mock.calls[1][0] as { wish?: string }
+    expect(again.wish).toContain('편의점에서')
+    expect(again.wish).toContain('닭가슴살 샐러드')
+    expect(again.wish!.length).toBeLessThanOrEqual(100)
+    await screen.findByRole('list', { name: '추천 식사' })
+  })
+
+  it('지난 날을 볼 때는 추천을 보여 주지 않는다', () => {
+    signIn()
+    renderToday()
+    expect(screen.getByRole('button', { name: /남은 양에 맞는 식사 추천/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '이전 날' }))
+    expect(screen.queryByRole('button', { name: /남은 양에 맞는 식사 추천/ })).not.toBeInTheDocument()
   })
 })

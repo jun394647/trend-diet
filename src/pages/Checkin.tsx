@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAiAvailability } from '../ai/useAiAvailability'
+import { AiLoginHint } from '../components/ai/AiBits'
+import WeekReviewSection from '../components/ai/WeekReviewSection'
 import { diffDays, formatKorean, today } from '../lib/date'
 import { isCheckinDue, latestCheckin } from '../lib/selectors'
 import { buildCheckinReview, targetRange } from '../lib/sustain'
@@ -81,6 +84,7 @@ export default function Checkin() {
   const checkins = useStore((s) => s.checkins)
   const applyCheckinOption = useStore((s) => s.applyCheckinOption)
   const navigate = useNavigate()
+  const ai = useAiAvailability()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
   const [pickedId, setPickedId] = useState<CheckinOptionId | null>(null)
@@ -260,6 +264,9 @@ export default function Checkin() {
             : '조금 더 먹어도 괜찮아요. 천천히 빼야 오래 가요.'}
         </p>
       )}
+
+      {ai === 'ready' && <WeekReviewSection date={asOf} />}
+      {ai === 'login' && <AiLoginHint what="AI로 돌아보기" />}
 
       <section className="card" aria-labelledby="checkin-choice-title">
         <h2 className="card-title" id="checkin-choice-title">

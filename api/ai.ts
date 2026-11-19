@@ -1,7 +1,15 @@
-// 자리만 잡아 둔 파일. 구현은 이어서 채운다.
-import type { AiStatus } from '../src/ai/contract.ts'
+// AI 기능의 서버 함수. 로직은 server/ai에 있고 여기서는 실제 의존성만 연결한다.
+import { handleAi, type AiDeps } from '../server/ai/handler.ts'
+import { anthropicCallModel } from '../server/ai/model.ts'
 
-export function GET(): Response {
-  const status: AiStatus = { configured: Boolean(process.env.ANTHROPIC_API_KEY), dailyLimit: 0 }
-  return Response.json(status)
+export const config = { maxDuration: 60 }
+
+const deps = (): AiDeps => ({ env: process.env, fetch: globalThis.fetch, callModel: anthropicCallModel() })
+
+export function GET(request: Request): Promise<Response> {
+  return handleAi(request, deps())
+}
+
+export async function POST(request: Request): Promise<Response> {
+  return handleAi(request, deps())
 }

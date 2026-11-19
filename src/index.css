@@ -4,7 +4,10 @@
  * 구성: 한 장의 종이 위에 구획을 가는 선으로만 나눈 기록장. 카드 상자는 쓰지 않는다.
  *       화면마다 가장 중요한 한 가지만 짙은 남색 패널(.panel)에 올린다.
  * 색:   남색 잉크 계열의 무채색 + 남보라 강조 + 꿀색 표식(목표 범위, 지금 위치).
- * 글꼴: 숫자와 제목의 로마자는 Bricolage Grotesque, 한글과 본문은 기기 기본 글꼴.
+ * 글꼴: 숫자와 제목의 로마자는 Bricolage Grotesque, 한글과 본문은 Pretendard.
+ * 깊이: 그림자는 떠 있는 것(시트, 아래 탭, 알림)과 패널에만 쓴다. 본문 구획은 여전히 평평하다.
+ * 움직임: 짧고 한 방향으로. 시트는 아래에서 올라오고, 화면은 살짝 떠오르며 나타난다.
+ *        --dur-*, --ease-* 토큰만 쓰고, prefers-reduced-motion에서는 모두 꺼진다.
  */
 :root {
   /* 바탕과 글자 */
@@ -14,6 +17,8 @@
   --text: #171a33;
   --text-2: #5a5f82;
   --border: #dcdeec;
+  /* 여러 개 중 고른 조각의 바탕. 바탕(--surface-2)보다 항상 밝다. */
+  --seg-selected: #ffffff;
 
   /* 강조 */
   --accent: #4741d6;
@@ -38,13 +43,26 @@
   --danger: #b42318;
   --danger-soft: #fde4e1;
 
-  --radius: 18px;
-  --radius-sm: 12px;
+  --radius: 20px;
+  --radius-sm: 14px;
+  --radius-xs: 10px;
+
+  /* 깊이: 떠 있는 것에만 */
+  --shadow-float: 0 1px 2px rgb(23 26 51 / 6%), 0 8px 24px rgb(23 26 51 / 10%);
+  --shadow-sheet: 0 -8px 40px rgb(10 11 30 / 22%);
+  --shadow-panel: 0 10px 30px -12px rgb(28 30 75 / 45%);
+
+  /* 움직임 */
+  --dur-1: 120ms;
+  --dur-2: 220ms;
+  --dur-3: 340ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.25, 1);
   --gutter: 20px;
   --tabbar-h: 62px;
 
-  --font-body: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR',
-    'Segoe UI', sans-serif;
+  --font-body: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+    'Noto Sans KR', 'Segoe UI', sans-serif;
   --font-display: 'Bricolage Grotesque Variable', var(--font-body);
 
   font-family: var(--font-body);
@@ -59,6 +77,7 @@
     --text: #ecedfa;
     --text-2: #a2a6cb;
     --border: #2b2e52;
+    --seg-selected: #3a3e78;
 
     --accent: #a9a6ff;
     --accent-text: #14143d;
@@ -78,6 +97,10 @@
     --warn-soft: #3a2c0c;
     --danger: #ff8a80;
     --danger-soft: #3d1a17;
+
+    --shadow-float: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 40%);
+    --shadow-sheet: 0 -8px 40px rgb(0 0 0 / 55%);
+    --shadow-panel: 0 10px 30px -14px rgb(0 0 0 / 70%);
   }
 }
 
@@ -92,6 +115,9 @@ body {
   color: var(--text);
   font-size: 16px;
   line-height: 1.55;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   word-break: keep-all;
@@ -125,7 +151,19 @@ select {
     calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 32px) max(var(--gutter), env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
+}
+
+.page {
+  /* 끝난 뒤에는 효과를 남기지 않는다. 남기면 화면이 별도 층이 되어 시트가 아래 탭 밑에 깔린다. */
+  animation: page-in var(--dur-2) var(--ease-out) backwards;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
 .page--no-tabbar {
@@ -160,8 +198,9 @@ select {
 .panel {
   background: var(--panel);
   color: var(--panel-text);
-  border-radius: var(--radius);
-  padding: 22px 20px;
+  border-radius: 24px;
+  padding: 24px 22px;
+  box-shadow: var(--shadow-panel), inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .panel .muted,
@@ -240,11 +279,14 @@ select {
   gap: 6px;
   text-decoration: none;
   color: var(--text);
-  transition: transform 80ms ease;
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) ease,
+    border-color var(--dur-1) ease;
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .btn:disabled {
@@ -339,7 +381,7 @@ select {
 
 .segmented > button[aria-pressed='true'],
 .segmented > button[aria-selected='true'] {
-  background: var(--surface);
+  background: var(--seg-selected);
   color: var(--text);
   box-shadow: 0 1px 2px rgb(23 26 51 / 14%);
 }
@@ -429,14 +471,28 @@ select {
   right: 0;
   bottom: 0;
   z-index: 10;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom);
+  /* 뒤 내용이 비치되 글자가 겹쳐 읽히지는 않을 만큼만 투명하게 둔다. */
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  /* 접두사 붙은 쪽을 먼저 적는다. 순서가 반대면 빌드 때 표준 속성이 지워져 Chrome에서 흐림이 꺼진다. */
+  -webkit-backdrop-filter: saturate(1.6) blur(20px);
+  backdrop-filter: saturate(1.6) blur(20px);
+  border-top: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* 앱의 틀이라 글자가 선택되거나 길게 눌러 메뉴가 뜨지 않게 한다. 본문에는 적용하지 않는다. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 흐림 효과를 못 쓰는 브라우저에서는 불투명하게 둔다. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar {
+    background: var(--bg);
+  }
 }
 
 .tabbar-inner {
+  position: relative;
   max-width: 520px;
   margin: 0 auto;
   height: var(--tabbar-h);
@@ -446,31 +502,72 @@ select {
   grid-auto-columns: minmax(0, 1fr);
 }
 
+/* 지금 탭의 아이콘 뒤에 깔리는 알약. 탭 한 칸만큼의 너비를 갖고 --tab-index 칸으로 미끄러진다. */
+.tabbar-pill {
+  position: absolute;
+  top: 7px;
+  left: 0;
+  width: calc(100% / var(--tab-count, 4));
+  height: 30px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transform: translateX(calc(100% * var(--tab-index, 0)));
+  transition:
+    transform var(--dur-3) var(--ease-out),
+    opacity var(--dur-1) ease;
+}
+
+.tabbar-pill::before {
+  content: '';
+  width: 58px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+}
+
+.tabbar-pill[data-hidden] {
+  opacity: 0;
+}
+
 .tabbar a {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
+  justify-content: flex-start;
+  gap: 2px;
+  padding-top: 7px;
   text-decoration: none;
   color: var(--text-2);
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 600;
+  line-height: 1.3;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--dur-2) ease;
 }
 
 .tabbar a.active {
   color: var(--accent);
+  font-weight: 800;
 }
 
 .tabbar a:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: -4px;
-  border-radius: 12px;
+  outline-offset: -3px;
+  border-radius: 14px;
 }
 
+/* 아이콘은 22px로 그리고, 알약 높이(30px)에 맞춰 위아래를 띄운다. */
 .tabbar svg {
   width: 22px;
   height: 22px;
+  margin: 4px 0;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+
+.tabbar a:active svg {
+  transform: scale(0.9);
 }
 
 .sheet-backdrop {
@@ -478,6 +575,7 @@ select {
   inset: 0;
   z-index: 20;
   background: rgb(10 11 30 / 55%);
+  animation: backdrop-in var(--dur-2) ease both;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -490,12 +588,107 @@ select {
   overflow-y: auto;
   background: var(--bg);
   border-top: 1px solid var(--border);
-  border-radius: 24px 24px 0 0;
+  border-radius: 28px 28px 0 0;
+  box-shadow: var(--shadow-sheet);
+  animation: sheet-in var(--dur-3) var(--ease-out) both;
   padding: 20px max(var(--gutter), env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 20px)
     max(var(--gutter), env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* 시트 맨 위의 손잡이. 시트의 첫 자식으로 둔다. */
+.sheet-grabber {
+  align-self: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 4px;
+  margin: -8px 0 -4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* 불러오는 동안의 자리 표시 */
+.skeleton {
+  border-radius: var(--radius-xs);
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: skeleton 1.4s ease infinite;
+}
+
+@keyframes skeleton {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: 0 50%;
+  }
+}
+
+/* 화면 아래에 잠깐 뜨는 알림 */
+.toast-region {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--gutter);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  max-width: 480px;
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-float);
+  animation: toast-in var(--dur-2) var(--ease-out) both;
+}
+
+.toast button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
 }
 
 .center-screen {

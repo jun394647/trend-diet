@@ -120,13 +120,28 @@ export default function FoodAmount({ picked, busy, onBack, onLog }: Props) {
       <div className="food-total">
         <span className="muted">기록할 칼로리</span>
         <span className="food-total-kcal num" data-testid="food-kcal">
-          {kcal !== null ? `${fmtKcal(kcal)} kcal` : '—'}
+          {kcal !== null ? (
+            <>
+              {fmtKcal(kcal)}
+              <span className="food-total-unit"> kcal</span>
+            </>
+          ) : (
+            '—'
+          )}
         </span>
       </div>
       {macros.length > 0 && (
-        <p className="small muted num">
-          {macros.map(([label, v]) => `${label} ${v}g`).join(' · ')}
-        </p>
+        <dl className="food-macros">
+          {macros.map(([label, v]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd className="num">
+                {v}
+                <span className="food-macro-unit">g</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
       )}
 
       <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={busy}>

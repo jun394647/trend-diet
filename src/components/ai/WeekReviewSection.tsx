@@ -75,13 +75,32 @@ export default function WeekReviewSection({ date, recommendation }: { date: Date
             )}
           </div>
 
+          {/* 기다리는 동안에는 받을 글과 같은 모양의 자리 표시를 둔다. 답이 와도 아래 구획이 덜 움직인다. */}
+          {!review && pending && (
+            <div className="week-review-skeleton" aria-hidden="true">
+              <span className="skeleton week-review-sk-head" />
+              <span className="skeleton week-review-sk-head week-review-sk--w60" />
+              <span className="skeleton week-review-sk-label" />
+              <span className="skeleton week-review-sk-line week-review-sk--w85" />
+              <span className="skeleton week-review-sk-line week-review-sk--w70" />
+              <span className="skeleton week-review-sk-label" />
+              <span className="skeleton week-review-sk-line week-review-sk--w90" />
+              <span className="skeleton week-review-sk-line week-review-sk--w60" />
+              <span className="week-review-sk-next">
+                <span className="skeleton week-review-sk-label" />
+                <span className="skeleton week-review-sk-line week-review-sk--w90" />
+                <span className="skeleton week-review-sk-line week-review-sk--w45" />
+              </span>
+            </div>
+          )}
+
           {review && (
             <div className="week-review-result" data-testid="week-review">
               <p className="week-review-headline" ref={headlineRef} tabIndex={-1}>
                 {review.headline}
               </p>
               {review.wins.length > 0 && (
-                <div>
+                <div className="week-review-group week-review-group--wins">
                   <h3 className="week-review-sub" id="week-review-wins">
                     잘된 점
                   </h3>
@@ -93,7 +112,7 @@ export default function WeekReviewSection({ date, recommendation }: { date: Date
                 </div>
               )}
               {review.observations.length > 0 && (
-                <div>
+                <div className="week-review-group week-review-group--obs">
                   <h3 className="week-review-sub" id="week-review-obs">
                     눈에 띄는 점
                   </h3>

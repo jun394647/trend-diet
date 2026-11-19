@@ -1,6 +1,37 @@
 /* main.tsx가 index.css를 화면 CSS보다 나중에 불러오므로, 공통 클래스를 덮어쓰는 규칙은 클래스를 겹쳐 우선순위를 올린다. */
 .stack.pf {
-  gap: 18px;
+  gap: 20px;
+}
+
+.pf .field {
+  gap: 8px;
+}
+
+.pf .field > label,
+.pf .label {
+  line-height: 20px;
+}
+
+.pf .input {
+  min-height: 52px;
+  padding-left: 16px;
+  font-size: 1.0625rem;
+  transition: border-color var(--dur-1) ease;
+}
+
+/* 초점은 테두리 자리에 겹친 한 줄의 굵은 선으로 보여 준다. */
+.pf .input:focus-visible {
+  border-color: var(--accent);
+  outline-offset: -1px;
+}
+
+.pf .input::placeholder {
+  color: var(--text-2);
+  opacity: 0.6;
+}
+
+.pf .field-error {
+  line-height: 1.5;
 }
 
 .pf-input-wrap {
@@ -8,7 +39,7 @@
 }
 
 .pf-input-wrap > .input {
-  padding-right: 44px;
+  padding-right: 48px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -18,11 +49,12 @@
 
 .pf-unit {
   position: absolute;
-  right: 14px;
+  right: 16px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-2);
   font-size: 0.875rem;
+  font-weight: 600;
   pointer-events: none;
 }
 
@@ -40,7 +72,7 @@
 
 .pf-fieldset > legend {
   padding: 0;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .pf-options {
@@ -53,22 +85,67 @@
 .pf-option,
 .pf-pace-row {
   width: 100%;
-  min-height: 60px;
-  padding: 10px 14px;
+  min-height: 64px;
+  padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color var(--dur-1) ease,
+    border-color var(--dur-1) ease,
+    box-shadow var(--dur-1) ease;
 }
 
+/* 활동량 줄도 속도 줄과 같은 동그란 표시를 왼쪽에 둔다. */
 .pf-option {
   appearance: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 2px;
+  align-content: center;
+  align-items: center;
+}
+
+.pf-option::before {
+  content: '';
+  grid-row: 1 / span 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-2);
+  opacity: 0.7;
+  transition: border-color var(--dur-1) ease;
+}
+
+.pf-option::after {
+  content: '';
+  position: absolute;
+  left: 22px;
+  top: calc(50% - 5px);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: scale(0);
+  transition: transform var(--dur-2) var(--ease-out);
+}
+
+.pf-option > span {
+  grid-column: 2;
+}
+
+.pf-option[aria-pressed='true']::before {
+  border-color: var(--accent);
+  opacity: 1;
+}
+
+.pf-option[aria-pressed='true']::after {
+  transform: scale(1);
 }
 
 .pf-pace {
@@ -98,9 +175,10 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 2px solid var(--text-2);
+  border: 1.5px solid color-mix(in srgb, var(--text-2) 70%, transparent);
   display: grid;
   place-items: center;
+  transition: border-color var(--dur-1) ease;
 }
 
 .pf-pace-mark::after {
@@ -110,6 +188,7 @@
   border-radius: 50%;
   background: var(--accent);
   transform: scale(0);
+  transition: transform var(--dur-2) var(--ease-out);
 }
 
 .pf-pace-text {
@@ -144,8 +223,13 @@
   font-weight: 700;
 }
 
+.pf-option-label {
+  line-height: 1.4;
+}
+
 .pf-option-hint {
   font-size: 0.8125rem;
+  line-height: 1.45;
   color: var(--text-2);
 }
 
@@ -184,5 +268,11 @@
 }
 
 .pf-pace-note {
-  margin-top: 10px;
+  margin-top: 12px;
+  line-height: 1.55;
+}
+
+.pf-pace-note b {
+  font-family: var(--font-display);
+  color: var(--text);
 }

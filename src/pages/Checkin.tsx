@@ -114,9 +114,9 @@ export default function Checkin() {
 
   if (!review || !last) {
     return (
-      <main className="page">
+      <main className="page checkin-page checkin-page--empty">
         <h1 className="page-title">주간 체크인</h1>
-        <p>아직 체크인할 계획이 없어요. 먼저 기본 정보를 입력해 주세요.</p>
+        <p className="muted">아직 체크인할 계획이 없어요. 먼저 기본 정보를 입력해 주세요.</p>
         <Link to="/" className="btn btn--primary btn--block btn--lg">
           홈으로 가기
         </Link>
@@ -181,7 +181,7 @@ export default function Checkin() {
                   `${sinceLabel} 거의 그대로예요`
                 ) : (
                   <>
-                    {sinceLabel} <span className="num">{signed(trendChangeKg, 1)}</span> kg
+                    {sinceLabel} <span className="num checkin-hero-delta">{signed(trendChangeKg, 1)}</span> kg
                   </>
                 )}
               </p>
@@ -223,18 +223,20 @@ export default function Checkin() {
         <h2 className="card-title" id="checkin-tdee-title">
           추정 소비 칼로리
         </h2>
-        <p className="checkin-change">
-          <span className="num muted">{kcal(previous.tdee)}</span>
-          <span className="checkin-arrow" aria-hidden="true">
-            →
-          </span>
-          <span className="checkin-sr">에서</span>
-          <span className="num checkin-new">{kcal(estimate.tdee)}</span>
-          <span className="muted checkin-change-unit">kcal</span>
-        </p>
-        <p className="small muted num">
-          {insufficient ? '이전 추정치 그대로' : tdeeDiff === 0 ? '변화 없음' : signedKcal(tdeeDiff)}
-        </p>
+        <div className="checkin-tdee">
+          <p className="checkin-change">
+            <span className="num checkin-old">{kcal(previous.tdee)}</span>
+            <svg className="checkin-arrow" width="22" height="12" viewBox="0 0 22 12" aria-hidden="true">
+              <path d="M1 6h19M15 1l5 5-5 5" />
+            </svg>
+            <span className="checkin-sr">에서</span>
+            <span className="num checkin-new">{kcal(estimate.tdee)}</span>
+            <span className="checkin-change-unit">kcal</span>
+          </p>
+          <p className={`num checkin-delta${insufficient || tdeeDiff === 0 ? ' checkin-delta--same' : ''}`}>
+            {insufficient ? '이전 추정치 그대로' : tdeeDiff === 0 ? '변화 없음' : signedKcal(tdeeDiff)}
+          </p>
+        </div>
 
         {insufficient ? (
           <div className="checkin-explain">
@@ -320,13 +322,14 @@ export default function Checkin() {
                   <span className="checkin-option-body">
                     <span className="checkin-option-head">
                       <span className="checkin-option-title">{copy.title}</span>
-                      {o.recommended && <span className="chip chip--accent">추천</span>}
+                      {o.recommended && <span className="chip chip--accent checkin-option-chip">추천</span>}
                     </span>
                     <span className="checkin-option-target">
-                      <span className="num" data-testid={`option-${o.id}-range`}>
-                        {kcal(range.low)}~{kcal(range.high)} kcal
+                      <span className="num checkin-option-range" data-testid={`option-${o.id}-range`}>
+                        {kcal(range.low)}~{kcal(range.high)}
+                        <span className="checkin-option-unit"> kcal</span>
                       </span>
-                      <span className="small muted num">
+                      <span className="small muted num checkin-option-diff">
                         {diff === 0 ? '지금 목표와 같아요' : `지금보다 ${signedKcal(diff)}`}
                       </span>
                     </span>
@@ -345,7 +348,7 @@ export default function Checkin() {
         </p>
       )}
 
-      <div className="stack">
+      <div className="stack checkin-actions">
         <button
           type="button"
           className="btn btn--primary btn--block btn--lg"

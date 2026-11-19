@@ -82,7 +82,7 @@ function AuthForm() {
   }
 
   return (
-    <form className="stack" onSubmit={submit} noValidate>
+    <form className="stack acc-form" onSubmit={submit} noValidate>
       <button
         type="button"
         className="btn btn--block acc-google"
@@ -184,20 +184,23 @@ export default function AccountPanel() {
         계정과 동기화
       </h2>
       {!ready ? (
-        <p className="muted">로그인 상태를 확인하는 중이에요…</p>
+        <p className="muted small acc-checking">로그인 상태를 확인하는 중이에요…</p>
       ) : email && !conflict ? (
         <div className="stack">
-          <div>
+          <div className="acc-me">
             <p className="acc-email">{email}</p>
-            <p className="small muted">
-              기록을 계정에 저장해서, 다른 기기에서 로그인해도 같은 기록이 보여요.
-            </p>
-            <p className="small muted" role="status">
+            <p
+              className={`small muted acc-status acc-status--${status === 'syncing' ? 'syncing' : status === 'error' ? 'error' : lastSyncedAt ? 'ok' : 'idle'}`}
+              role="status"
+            >
               {status === 'syncing'
                 ? '동기화하는 중이에요…'
                 : lastSyncedAt
                   ? `마지막 동기화 ${formatDateTime(lastSyncedAt)}`
                   : '아직 동기화하지 않았어요.'}
+            </p>
+            <p className="small muted">
+              기록을 계정에 저장해서, 다른 기기에서 로그인해도 같은 기록이 보여요.
             </p>
           </div>
           {status === 'error' && error && (
@@ -209,7 +212,7 @@ export default function AccountPanel() {
             <button type="button" className="btn" disabled={status === 'syncing'} onClick={() => void syncNow()}>
               지금 동기화
             </button>
-            <button type="button" className="btn" onClick={() => void signOut()}>
+            <button type="button" className="btn btn--ghost acc-out" onClick={() => void signOut()}>
               로그아웃
             </button>
           </div>
@@ -217,7 +220,7 @@ export default function AccountPanel() {
       ) : (
         <div className="stack">
           {!conflict && (
-            <p className="muted">
+            <p className="muted acc-intro">
               로그인하면 기록이 계정에 저장돼요. 휴대폰을 바꾸거나 브라우저 데이터를 지워도 다시
               불러올 수 있어요.
             </p>

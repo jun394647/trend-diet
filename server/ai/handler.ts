@@ -1,10 +1,13 @@
 /**
  * /api/ai 의 본체. 환경변수, fetch, 모델 호출을 deps로 받아 테스트에서 가짜를 끼울 수 있다.
  * 확인 순서: 키 → 로그인 → 요청 형식 → 허용 목록 → 하루 한도 → Claude.
+ * 답하는 순서는 언제나 이대로지만, 로그인 확인과 횟수 쓰기는 기다리는 시간을 줄이려고 함께 보낼 때가 있다(handlePost).
  */
 import {
+  AI_STREAM_MIME,
   AiRequestSchema,
   DEFAULT_DAILY_LIMIT,
+  isAiStreamTask,
   type AiErrorBody,
   type AiErrorCode,
   type AiRequest,
@@ -12,9 +15,10 @@ import {
   type AiResultMap,
   type AiTask,
   type AiStatus,
+  type AiStreamEvent,
   type AiUsage,
 } from '../../src/ai/contract.ts'
-import type { CallModel } from './model.ts'
+import type { CallModel, ModelOutcome } from './model.ts'
 
 export type Env = Record<string, string | undefined>
 
@@ -125,6 +129,79 @@ async function takeUsage(deps: AiDeps, sb: { url: string; anonKey: string }, tok
   }
 }
 
+/**
+ * 토큰이 지금 쓸 수 있는 로그인 토큰처럼 생겼는지 본다. 서명은 확인하지 않는다(확인은 Supabase가 한다).
+ * 여기서 읽은 값은 믿지 않고, 로그인 확인과 횟수 쓰기를 함께 보내도 되는지 정하는 데만 쓴다.
+ */
+export function peekToken(token: string, nowMs: number = Date.now()): { email: string | null } | null {
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as { sub?: unknown; exp?: unknown; email?: unknown } | null
+    if (!payload || typeof payload.sub !== 'string' || !payload.sub) return null
+    if (typeof payload.exp !== 'number' || payload.exp * 1000 <= nowMs) return null
+    return { email: typeof payload.email === 'string' ? payload.email : null }
+  } catch {
+    return null
+  }
+}
+
+const inAllowList = (allow: Set<string> | null, email: string | null): boolean => !allow || Boolean(email && allow.has(email.trim().toLowerCase()))
+
+/** 화면이 조금씩 받겠다고 했고, 그렇게 줄 수 있는 task인지. */
+function wantsStream(request: Request, task: AiTask): boolean {
+  return isAiStreamTask(task) && (request.headers.get('accept') ?? '').toLowerCase().includes(AI_STREAM_MIME)
+}
+
+/**
+ * 조금씩 보내는 응답. run이 send로 넘긴 사건을 SSE로 한 줄씩 내보내고, run이 끝나면 닫는다.
+ * 받는 쪽이 떠나면 signal로 알려 모델 호출을 그만두게 한다.
+ */
+function streamResponse(run: (send: (event: AiStreamEvent) => void, signal: AbortSignal) => Promise<void>): Response {
+  const encoder = new TextEncoder()
+  const gone = new AbortController()
+  let open = true
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (event: AiStreamEvent): void => {
+        if (!open) return
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+        } catch {
+          open = false
+        }
+      }
+      void run(send, gone.signal)
+        .catch(() => {
+          console.log(JSON.stringify({ evt: 'ai', step: 'stream', status: 'threw' }))
+          send({ type: 'error', ok: false, error: 'failed' })
+        })
+        .finally(() => {
+          if (!open) return
+          open = false
+          try {
+            controller.close()
+          } catch {
+            // 이미 닫혔다.
+          }
+        })
+    },
+    cancel() {
+      open = false
+      gone.abort()
+    },
+  })
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': `${AI_STREAM_MIME}; charset=utf-8`,
+      // 중간에서 모아 두거나 바꾸지 않고 오는 대로 넘기게 한다.
+      'Cache-Control': 'no-store, no-transform',
+      'X-Accel-Buffering': 'no',
+    },
+  })
+}
+
 async function handlePost(request: Request, deps: AiDeps): Promise<Response> {
   const { env } = deps
   const sb = supabaseConfig(env)
@@ -132,37 +209,61 @@ async function handlePost(request: Request, deps: AiDeps): Promise<Response> {
 
   const token = bearerToken(request)
   if (!token) return fail('unauthorized')
+
+  // 요청 형식은 네트워크 없이 볼 수 있으니 먼저 읽어 둔다. 답하는 순서는 그대로 로그인이 먼저다.
+  let aiRequest: AiRequest | null = null
+  try {
+    const parsed = AiRequestSchema.safeParse(JSON.parse(await request.text()))
+    if (parsed.success) aiRequest = parsed.data
+  } catch {
+    aiRequest = null
+  }
+
+  const allow = allowedEmails(env)
+  const limit = dailyLimit(env)
+
+  // 로그인 확인과 횟수 쓰기는 둘 다 Supabase를 한 번씩 다녀온다. 이 요청이 통과할 것으로 보이면
+  // (형식이 맞고, 토큰이 만료되지 않은 로그인 토큰처럼 생겼고, 토큰에 적힌 이메일이 허용 목록에 있으면)
+  // 둘을 함께 보내 한 번 다녀오는 시간만 기다린다. 그렇지 않으면 예전처럼 차례로 확인해, 통과하지 못할
+  // 요청이 횟수를 쓰는 일이 없게 한다. 가짜 토큰은 Supabase가 서명에서 걸러 내므로 횟수를 쓰지 못한다.
+  // 함께 보냈는데 로그인 확인만 떨어지는 드문 경우(막 로그아웃한 토큰)에는 그 사용자의 오늘 횟수 하나가 쓰인다.
+  const peek = aiRequest ? peekToken(token) : null
+  const together = peek !== null && inAllowList(allow, peek.email)
+  const early = together ? takeUsage(deps, sb, token, limit) : null
+
   const user = await verifyUser(deps, sb, token)
   if (!user.ok) return fail(user.error)
 
   // 횟수를 쓰기 전에 요청부터 확인한다.
-  let raw: unknown
-  try {
-    raw = JSON.parse(await request.text())
-  } catch {
-    return fail('bad_request')
-  }
-  const parsed = AiRequestSchema.safeParse(raw)
-  if (!parsed.success) return fail('bad_request')
-  const aiRequest: AiRequest = parsed.data
+  if (!aiRequest) return fail('bad_request')
+  if (!inAllowList(allow, user.email)) return fail('forbidden')
 
-  const allow = allowedEmails(env)
-  if (allow && !(user.email && allow.has(user.email.trim().toLowerCase()))) return fail('forbidden')
-
-  const limit = dailyLimit(env)
-  const count = await takeUsage(deps, sb, token, limit)
+  const count = await (early ?? takeUsage(deps, sb, token, limit))
   // 횟수를 확인하지 못하면 Claude를 부르지 않는다.
   if (count === null) return fail('failed')
   if (count === -1) return fail('limit', { used: limit, limit })
   const usage: AiUsage = { used: count, limit }
 
-  let outcome: Awaited<ReturnType<CallModel>>
-  try {
-    outcome = await deps.callModel({ request: aiRequest, userId: user.id })
-  } catch {
-    console.log(JSON.stringify({ evt: 'ai', step: 'model', task: aiRequest.task, user: user.id, status: 'threw' }))
-    outcome = { ok: false, error: 'failed' }
+  const task = aiRequest.task
+  const call = async (extra: Pick<Parameters<CallModel>[0], 'onPartial' | 'signal'> = {}): Promise<ModelOutcome> => {
+    try {
+      return await deps.callModel({ request: aiRequest, userId: user.id, ...extra })
+    } catch {
+      console.log(JSON.stringify({ evt: 'ai', step: 'model', task, user: user.id, status: 'threw' }))
+      return { ok: false, error: 'failed' }
+    }
   }
+
+  if (wantsStream(request, task)) {
+    return streamResponse(async (send, signal) => {
+      send({ type: 'start', usage })
+      const outcome = await call({ signal, onPartial: (result) => send({ type: 'partial', result }) })
+      if (!outcome.ok) send({ type: 'error', ok: false, error: outcome.error, usage })
+      else send({ type: 'done', ok: true, result: outcome.result as AiResultMap[AiTask], usage })
+    })
+  }
+
+  const outcome = await call()
   if (!outcome.ok) return fail(outcome.error, usage)
   // 이 경로로 오는 요청은 브라우저 계약의 task뿐이라 결과도 그 범위 안이다(서버 전용 task는 여기로 오지 않는다).
   const body: AiResponse = { ok: true, result: outcome.result as AiResultMap[AiTask], usage }

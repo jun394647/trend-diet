@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useAiAvailability } from '../../ai/useAiAvailability'
+import { CheckIcon, PlusIcon } from '../today/icons'
 import { useStore } from '../../store'
 import type { DateStr } from '../../types'
 import { AiConflictHint, AiDisclaimer, AiErrorNote, AiLimitNote, AiLoginHint, AiQuotaLeft, AiTag } from './AiBits'
@@ -171,12 +172,28 @@ export default function SuggestMeals({ date, over = false }: { date: DateStr; ov
           )}
         </div>
 
+        {/* 기다리는 동안 추천 줄이 놓일 자리를 미리 잡아 둔다. */}
+        {pending && (
+          <div className="suggest-skeleton" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i}>
+                <span className="suggest-skeleton-text">
+                  <span className="skeleton" />
+                  <span className="skeleton" />
+                  <span className="skeleton" />
+                </span>
+                <span className="skeleton suggest-skeleton-btn" />
+              </div>
+            ))}
+          </div>
+        )}
+
         {shownError !== null && <AiErrorNote error={shownError} onRetry={canAsk ? ask : undefined} />}
 
         {rows !== null && !pending && (
           <>
             {stale && rows.length > 0 && (
-              <p className="small muted">기록이 바뀌기 전에 받은 추천이라 지금 남은 양과 다를 수 있어요.</p>
+              <p className="small muted suggest-stale">기록이 바뀌기 전에 받은 추천이라 지금 남은 양과 다를 수 있어요.</p>
             )}
             {rows.length > 0 && (
               <ul className={`list suggest-list${stale ? ' is-stale' : ''}`} aria-label="추천 식사">
@@ -184,13 +201,16 @@ export default function SuggestMeals({ date, over = false }: { date: DateStr; ov
                   const done = logged.includes(i)
                   const busy = store.logging.includes(i)
                   return (
-                    <li key={`${i}|${s.name}`}>
+                    <li key={`${i}|${s.name}`} className={done ? 'is-logged' : undefined}>
                       <div className="suggest-item">
                         <p className="suggest-name" ref={i === 0 ? firstRef : undefined} tabIndex={-1}>
                           {s.name}
                         </p>
-                        <p className="suggest-kcal small num">{fmtKcal(s.kcal)} kcal</p>
-                        <p className="small muted">{s.why}</p>
+                        <p className="suggest-kcal num">
+                          {fmtKcal(s.kcal)}
+                          <span className="suggest-unit"> kcal</span>
+                        </p>
+                        <p className="small muted suggest-why">{s.why}</p>
                       </div>
                       <button
                         type="button"
@@ -200,6 +220,7 @@ export default function SuggestMeals({ date, over = false }: { date: DateStr; ov
                         aria-label={`${s.name} ${fmtKcal(s.kcal)} kcal ${done ? '기록함' : '기록'}`}
                         onClick={() => void onLog(i)}
                       >
+                        {done ? <CheckIcon /> : <PlusIcon />}
                         {done ? '기록함' : '기록'}
                       </button>
                     </li>
@@ -208,7 +229,8 @@ export default function SuggestMeals({ date, over = false }: { date: DateStr; ov
               </ul>
             )}
             {note && (
-              <p className="suggest-note" ref={noteRef} tabIndex={-1}>
+              <p className={`suggest-note${rows.length > 0 ? ' suggest-note--ai' : ''}`} ref={noteRef} tabIndex={-1}>
+                {rows.length > 0 && <AiTag />}
                 {note}
               </p>
             )}

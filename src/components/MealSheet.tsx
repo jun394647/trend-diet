@@ -24,7 +24,7 @@ import {
 } from './ai/MealAiStore'
 import FoodAmount, { fmtAmount } from './FoodAmount'
 import { fmtKcal } from './today/format'
-import { TrashIcon } from './today/icons'
+import { ChevronRight, TrashIcon } from './today/icons'
 import './today/shared.css'
 import './MealSheet.css'
 
@@ -465,7 +465,10 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
             onClick={() => onRough(size)}
           >
             <span className="rough-label">{ROUGH_PORTIONS[size].label}</span>
-            <span className="rough-kcal num">{fmtKcal(roughKcal(size, targetKcal))} kcal</span>
+            <span className="rough-kcal num">
+              {fmtKcal(roughKcal(size, targetKcal))}
+              <span className="rough-unit"> kcal</span>
+            </span>
           </button>
         ))}
       </div>
@@ -482,6 +485,7 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
       }}
     >
       <div ref={sheetRef} className="sheet meal-sheet" role="dialog" aria-modal="true" aria-label="식사 추가" tabIndex={-1}>
+        <div className="sheet-grabber" aria-hidden="true" />
         <div className="meal-sheet-head">
           <div>
             <h2 className="meal-sheet-title">식사 추가</h2>
@@ -656,7 +660,10 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
                           onClick={() => logSuggestion(s)}
                         >
                           <span className="fav-name">{s.name}</span>
-                          <span className="fav-kcal num">{fmtKcal(s.kcal)} kcal</span>
+                          <span className="fav-kcal num">
+                            {fmtKcal(s.kcal)}
+                            <span className="fav-unit"> kcal</span>
+                          </span>
                         </button>
                         {/* 따로 저장해 둔 항목만 지울 수 있다. 먹은 기록에서 온 항목은 기록이 남아 있는 한 다시 뜬다. */}
                         {s.favoriteId !== null && !s.inHistory && (
@@ -681,7 +688,16 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
                 <h3 className="card-title" id="db-title">
                   음식 목록에서 찾기
                 </h3>
-                {dbState.status === 'loading' && <p className="muted">음식 목록을 불러오는 중이에요…</p>}
+                {dbState.status === 'loading' && (
+                  <>
+                    <p className="small muted">음식 목록을 불러오는 중이에요…</p>
+                    <div className="food-skeleton" aria-hidden="true">
+                      <span className="skeleton" />
+                      <span className="skeleton" />
+                      <span className="skeleton" />
+                    </div>
+                  </>
+                )}
                 {dbState.status === 'error' && (
                   <div className="stack">
                     <p className="field-error" role="alert">
@@ -701,11 +717,14 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
                       {dbResult.items.map((f, i) => (
                         <li key={`${f.name}|${f.tag}|${f.kcalPer100}|${f.servingSize}|${i}`}>
                           <button type="button" className="food-result" onClick={() => setPicked(f)}>
-                            <span className="food-result-main">
-                              <span className="food-result-name">{f.name}</span>
-                              {f.tag && <span className="food-result-tag">{f.tag}</span>}
+                            <span className="food-result-text">
+                              <span className="food-result-main">
+                                <span className="food-result-name">{f.name}</span>
+                                {f.tag && <span className="food-result-tag">{f.tag}</span>}
+                              </span>
+                              <span className="small muted num">{servingLabel(f)}</span>
                             </span>
-                            <span className="small muted num">{servingLabel(f)}</span>
+                            <ChevronRight />
                           </button>
                         </li>
                       ))}

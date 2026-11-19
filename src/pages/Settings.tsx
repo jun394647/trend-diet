@@ -14,6 +14,7 @@ import { phaseOf, targetRange, weekOfPhase } from '../lib/sustain'
 import { useStore } from '../store'
 import { useSync } from '../sync/store'
 import type { Phase, Profile } from '../types'
+import InstallEntry from '../components/InstallEntry'
 import './Settings.css'
 
 type Notice = { kind: 'ok' | 'error'; text: string }
@@ -137,7 +138,7 @@ function PhaseSection({ profile, onChanged }: { profile: Profile; onChanged: () 
       </div>
 
       {range && (
-        <div>
+        <div className="st-phase-main">
           <p className="st-phase-label">{rangeNameOf(phase)}</p>
           <p className="big-num st-phase-range">
             <span data-testid="st-phase-range">
@@ -277,11 +278,11 @@ function ProfileCard({ profile }: { profile: Profile }) {
         idPrefix="st"
       />
       {pacePaused && (
-        <p className="muted small">
+        <p className="muted small st-fine">
           지금은 유지 기간이라, 고른 속도는 감량을 다시 시작할 때부터 적용돼요.
         </p>
       )}
-      <p className="muted small">
+      <p className="muted small st-fine">
         시작 체중은 {profile.startWeightKg}kg이에요. 체중은 오늘 화면에서 기록해요. 저장하면 지금까지
         계산한 소비 칼로리는 그대로 두고 하루 목표 범위만 다시 계산해요.
       </p>
@@ -386,25 +387,28 @@ export default function Settings() {
             ? '기록은 계정에도 저장되고 있어요. 따로 보관하고 싶을 때 백업 파일로 내보낼 수 있어요.'
             : '기록은 이 기기에만 있어서 브라우저 데이터를 지우거나 기기를 바꾸면 사라져요. 가끔 백업 파일로 내보내 두세요.'}
         </p>
-        <p className="muted small" data-testid="last-backup">
+        <p className="muted small st-last-backup" data-testid="last-backup">
           {lastBackupAt ? `마지막 백업: ${formatDateTime(lastBackupAt)}` : '아직 백업한 적이 없어요.'}
         </p>
-        <button
-          type="button"
-          className="btn btn--block"
-          onClick={() => void handleExport()}
-          disabled={busy}
-        >
-          백업 파일 내보내기
-        </button>
-        <button
-          type="button"
-          className="btn btn--block"
-          onClick={() => fileRef.current?.click()}
-          disabled={busy}
-        >
-          백업 파일 가져오기
-        </button>
+        <div className="st-actions">
+          <button
+            type="button"
+            className="btn btn--block"
+            onClick={() => void handleExport()}
+            disabled={busy}
+          >
+            백업 파일 내보내기
+          </button>
+          <button
+            type="button"
+            className="btn btn--block"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+          >
+            백업 파일 가져오기
+          </button>
+          <p className="muted small">가져오면 지금 있는 기록은 백업 파일의 내용으로 바뀌어요.</p>
+        </div>
         <input
           ref={fileRef}
           className="st-file"
@@ -414,7 +418,6 @@ export default function Settings() {
           tabIndex={-1}
           onChange={(ev) => void handleFile(ev)}
         />
-        <p className="muted small">가져오면 지금 있는 기록은 백업 파일의 내용으로 바뀌어요.</p>
         <NoticeBanner notice={backupNotice} />
       </section>
 
@@ -458,6 +461,8 @@ export default function Settings() {
         )}
       </section>
 
+      <InstallEntry />
+
       <section className="card stack" aria-labelledby="st-about-title">
         <h2 className="st-title" id="st-about-title">
           앱 정보
@@ -477,7 +482,7 @@ export default function Settings() {
           </li>
           <li>소비 칼로리와 목표 칼로리는 기록으로 계산한 추정치이며 의학적 조언이 아니에요. 건강에 걱정되는 점이 있으면 전문가와 상담해 주세요.</li>
         </ul>
-        <p className="small muted" data-testid="build-version">
+        <p className="small muted st-version" data-testid="build-version">
           버전 {formatDateTime(__BUILD_TIME__)}
         </p>
       </section>

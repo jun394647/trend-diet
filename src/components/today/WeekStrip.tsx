@@ -29,7 +29,7 @@ export default function WeekStrip({ week, targetKcal, selected, today, onSelect 
           style={{ '--lo': pct(low) / 100, '--hi': pct(high) / 100 } as CSSProperties}
           aria-hidden="true"
         />
-        {week.days.map((d) => {
+        {week.days.map((d, i) => {
           const dow = DOW[parseDate(d.date).getDay()]
           const future = d.state === 'future'
           const label = future
@@ -45,9 +45,17 @@ export default function WeekStrip({ week, targetKcal, selected, today, onSelect 
               aria-pressed={d.date === selected}
               onClick={() => onSelect(d.date)}
             >
-              <span className="week-bar-slot" aria-hidden="true">
+              <span
+                className="week-bar-slot"
+                aria-hidden="true"
+                style={{ '--h': `${Math.max(4, pct(d.kcal ?? 0))}%`, '--i': i } as CSSProperties}
+              >
                 {d.kcal !== null ? (
-                  <span className="week-bar" style={{ height: `${Math.max(4, pct(d.kcal))}%` }} />
+                  <>
+                    {/* 고른 날은 막대 위에 그날 먹은 양을 작게 적는다. */}
+                    {d.date === selected && <span className="week-val num">{fmtKcal(d.kcal)}</span>}
+                    <span className="week-bar" />
+                  </>
                 ) : (
                   !future && <span className="week-empty" />
                 )}

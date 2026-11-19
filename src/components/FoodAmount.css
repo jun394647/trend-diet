@@ -18,14 +18,31 @@
   background: transparent;
   color: var(--text);
   width: 100%;
-  min-height: 58px;
+  min-height: 60px;
   padding: 10px 0;
   text-align: left;
   cursor: pointer;
   display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: background-color var(--dur-1) ease;
+}
+
+.food-result-text {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
-  justify-content: center;
   gap: 2px;
+}
+
+/* 다음 단계(양 고르기)로 넘어간다는 표시 */
+.food-result > svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--text-2);
+  opacity: 0.7;
 }
 
 .food-result:focus-visible {
@@ -111,4 +128,53 @@
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
+}
+
+.food-total-unit {
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+
+/* 영양 성분: 이름은 조용히, 값은 또렷이. 세 칸을 가는 선으로만 나눈다. */
+.food-macros {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  margin: -4px 0 0;
+}
+
+.food-macros > div {
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+
+.food-macros > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.food-macros dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.food-macros dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.food-macro-unit {
+  margin-left: 1px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.btn.food-preset {
+  min-height: 44px;
 }

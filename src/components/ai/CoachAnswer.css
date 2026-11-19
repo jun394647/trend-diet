@@ -1,0 +1,106 @@
+/*
+ * 코치의 답. 종이 위에 그대로 적는 글이라 상자는 없고,
+ * 문단 사이 간격과 줄 높이만으로 읽기 편하게 한다.
+ */
+.ca {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 1rem;
+  line-height: 1.65;
+  /* 한글은 낱말 단위로 줄을 바꾸고, 끊을 곳이 없는 긴 글자열만 중간에서 끊는다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.ca-p,
+.ca-h {
+  margin: 0;
+  /* 모델이 한 줄만 띄운 곳은 줄바꿈으로 보여 준다. */
+  white-space: pre-line;
+  text-wrap: pretty;
+}
+
+.ca strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* '# 제목'은 굵은 한 줄로만 둔다. 뒤따르는 글과 가깝게 붙인다. */
+.ca-h {
+  line-height: 1.45;
+  margin-bottom: -4px;
+}
+
+.ca-h:not(:first-child) {
+  margin-top: 4px;
+}
+
+/* ── 목록: 표시는 왼쪽 칸에, 글은 내어 쓴다 ── */
+
+.ca-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ca-item {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 4px;
+  align-items: baseline;
+}
+
+.ca-list--ol > .ca-item {
+  grid-template-columns: 24px minmax(0, 1fr);
+}
+
+.ca-item--nested {
+  margin-left: 24px;
+}
+
+/* 점 표시: 글줄 가운데 높이에 놓이는 작은 남보라 점 */
+.ca-marker {
+  position: relative;
+  align-self: start;
+  height: 1.65em;
+}
+
+.ca-marker:not(.ca-marker--num)::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: calc(50% - 2.5px);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.ca-item--nested > .ca-marker:not(.ca-marker--num)::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.25px var(--accent);
+}
+
+.ca-marker--num {
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  /* 글줄과 밑선을 맞춘다. */
+  line-height: calc(1.65 * 1rem);
+  height: auto;
+  align-self: baseline;
+}
+
+.ca-item-text {
+  min-width: 0;
+  text-wrap: pretty;
+}

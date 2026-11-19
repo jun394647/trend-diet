@@ -166,10 +166,10 @@ const outputs = [
   { name: 'pwa-192.png', size: 192, mark: 0.28, tile: TILE, alpha: true },
   { name: 'pwa-512.png', size: 512, mark: 0.28, tile: TILE, alpha: true },
   // 마스커블: 가장자리까지 채우고, 표식은 가운데 80% 안전 영역(반지름 0.4) 안에 둔다.
-  { name: 'maskable-192.png', size: 192, mark: 0.285, tile: FULL, alpha: false },
-  { name: 'maskable-512.png', size: 512, mark: 0.285, tile: FULL, alpha: false },
+  { name: 'maskable-192.png', size: 192, mark: 0.262, tile: FULL, alpha: false },
+  { name: 'maskable-512.png', size: 512, mark: 0.262, tile: FULL, alpha: false },
   // 단색: 테마 아이콘용. 모양만 남긴다.
-  { name: 'monochrome-512.png', size: 512, mark: 0.285, tile: null, mono: true, alpha: true },
+  { name: 'monochrome-512.png', size: 512, mark: 0.262, tile: null, mono: true, alpha: true },
   // iOS: 투명 없이 꽉 채운다. 모서리는 iOS가 깎는다.
   { name: 'apple-touch-icon.png', size: 180, mark: 0.3, tile: FULL, alpha: false },
   // SVG 파비콘을 못 쓰는 브라우저용
@@ -181,12 +181,45 @@ for (const { name, alpha, ...opts } of outputs) {
   console.log('wrote', name)
 }
 
+// ── 바로가기 아이콘 ─────────────────────────────────────
+// 아이콘을 길게 눌렀을 때 나오는 "식사 추가", "체중 기록" 옆에 붙는다. 남색 원 위에 흰 선 그림.
+const SHORTCUTS = {
+  // 더하기
+  'shortcut-meal.png': (x, y) => Math.min(distToSegment(x, y, [-0.15, 0], [0.15, 0]), distToSegment(x, y, [0, -0.15], [0, 0.15])) - 0.034,
+  // 체중계: 둥근 네모 테두리 + 위쪽의 둥근 눈금창 + 바늘
+  'shortcut-weight.png': (x, y) =>
+    Math.min(
+      Math.abs(roundedRect(x, y, 0.2, 0.08)) - 0.027,
+      Math.abs(Math.hypot(x, y + 0.045) - 0.078) - 0.022,
+      distToSegment(x, y, [0, -0.045], [0.03, -0.085]) - 0.02,
+    ),
+}
+for (const [name, glyph] of Object.entries(SHORTCUTS)) {
+  const size = 192
+  const px = new Uint8ClampedArray(size * size * 4)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const cx = (x + 0.5) / size - 0.5
+      const cy = (y + 0.5) / size - 0.5
+      const ground = mix(GROUND_TOP, GROUND_BOTTOM, clamp01(cy + 0.5))
+      const rgb = mix(ground, LINE, clamp01(0.5 - glyph(cx, cy) * size))
+      const o = (y * size + x) * 4
+      px[o] = rgb[0]
+      px[o + 1] = rgb[1]
+      px[o + 2] = rgb[2]
+      px[o + 3] = clamp01(0.5 - (Math.hypot(cx, cy) - 0.5) * size) * 255
+    }
+  }
+  writeFileSync(new URL(`../public/${name}`, import.meta.url), png(size, px, true))
+  console.log('wrote', name)
+}
+
 // 마스커블 안전 영역 확인: 표식의 가장 먼 점이 반지름 0.4 안에 있어야 한다.
 const reach = Math.max(
   ...SAMPLES.map(([x, y]) => Math.hypot(x, y) + LINE_HALF),
   Math.hypot(END[0], END[1]) + DOT_R,
 )
-const maskReach = reach * 0.285
+const maskReach = reach * 0.262
 if (maskReach > 0.4) throw new Error(`마스커블 안전 영역을 벗어났어요: ${maskReach.toFixed(3)}`)
 console.log('maskable reach', maskReach.toFixed(3), '(<= 0.400)')
 

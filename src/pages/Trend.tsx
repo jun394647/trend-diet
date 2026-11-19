@@ -20,6 +20,9 @@ const RANGES = [
 ] as const
 type RangeKey = (typeof RANGES)[number]['key']
 
+/** 줄 바꿈 없는 공백. 숫자와 단위를 한 줄에 묶을 때 쓴다. */
+const NB = '\u00A0'
+
 const fmtKcal = (n: number) => Math.round(n).toLocaleString('ko-KR')
 
 /** 부호를 붙인 숫자. 반올림해서 0이면 부호 없이 돌려준다. */
@@ -33,6 +36,29 @@ function monthDay(date: string, asOf: string): string {
   const d = parseDate(date)
   const md = `${d.getMonth() + 1}월 ${d.getDate()}일`
   return d.getFullYear() === parseDate(asOf).getFullYear() ? md : `${d.getFullYear()}년 ${md}`
+}
+
+/** 아직 그릴 것이 없을 때 차트 자리에 두는 흐린 밑그림. 꾸밈이라 읽어 주지 않는다. */
+function GhostLine() {
+  return (
+    <svg className="trend-ghost" viewBox="0 0 280 96" aria-hidden="true">
+      <path className="trend-ghost-grid" d="M0 12H280M0 48H280M0 84H280" />
+      <path className="trend-ghost-line" d="M4 26C60 30 86 40 130 50S214 66 268 72" />
+      <circle className="trend-ghost-end" cx="268" cy="72" r="4" />
+    </svg>
+  )
+}
+
+function GhostBars() {
+  const heights = [44, 58, 50, 0, 62, 54, 40, 60, 0, 52, 56, 46]
+  return (
+    <svg className="trend-ghost" viewBox="0 0 280 96" aria-hidden="true">
+      <path className="trend-ghost-grid" d="M0 12H280M0 48H280M0 84H280" />
+      {heights.map((h, i) =>
+        h > 0 ? <rect key={i} className="trend-ghost-bar" x={10 + i * 22} y={84 - h} width="10" height={h} rx="3" /> : null,
+      )}
+    </svg>
+  )
 }
 
 export default function Trend() {
@@ -115,20 +141,26 @@ export default function Trend() {
       : null
   const breakUntil = phase === 'maintain' ? (profile?.breakUntil ?? null) : null
 
+  // 차트를 글로 옮긴 한 문장. 숫자와 단위 사이에서 줄이 바뀌지 않게 그 사이만 줄 바꿈 없는 공백(NB)으로 적는다.
   const caption = change
-    ? `${range.phrase}(${formatShort(change.first.date)}~${formatShort(change.last.date)}) 동안 추세 체중이 ${change.first.trend.toFixed(1)} kg에서 ${change.last.trend.toFixed(1)} kg으로 ${
+    ? `${range.phrase}(${formatShort(change.first.date)}~${formatShort(change.last.date)}) 동안 추세 체중이 ${change.first.trend.toFixed(1)}${NB}kg에서 ${change.last.trend.toFixed(1)}${NB}kg으로 ${
         Math.abs(change.delta) < 0.05
           ? '거의 변하지 않았어요'
-          : `${Math.abs(change.delta).toFixed(1)} kg ${change.delta < 0 ? '줄었어요' : '늘었어요'}`
+          : `${Math.abs(change.delta).toFixed(1)}${NB}kg ${change.delta < 0 ? '줄었어요' : '늘었어요'}`
       }.`
     : null
 
-  function progressLine(): string {
-    if (!profile || !prog || !current) return ''
+  /** 패널의 한마디. 뒤쪽(다음 단계까지 남은 양)이 있으면 줄을 나눠 적는다. */
+  function progressLine(): { head: string; tail: string | null } {
+    if (!profile || !prog || !current) return { head: '', tail: null }
     if (reached) {
-      return phase === 'maintain'
-        ? '목표 체중에 닿았어요. 이제는 이 근처에 머무는 게 목표예요.'
-        : '목표 체중에 닿았어요. 다음 체크인에서 유지로 넘어갈 수 있어요.'
+      return {
+        head:
+          phase === 'maintain'
+            ? '목표 체중에 닿았어요. 이제는 이 근처에 머무는 게 목표예요.'
+            : '목표 체중에 닿았어요. 다음 체크인에서 유지로 넘어갈 수 있어요.',
+        tail: null,
+      }
     }
     const lost = Number(prog.lostKg.toFixed(1))
     const head =
@@ -137,10 +169,22 @@ export default function Trend() {
         : lost < 0
           ? `지금은 시작보다 ${Math.abs(lost).toFixed(1)} kg 높아요`
           : '시작 체중과 거의 같아요'
-    if (prog.nextStepKg === null) return `${head}.`
+    if (prog.nextStepKg === null) return { head: `${head}.`, tail: null }
     const toNext = Math.max(0.1, current.trend - prog.nextStepKg).toFixed(1)
     const stepName = prog.nextStepKg <= profile.goalWeightKg ? '목표' : '다음 단계'
-    return `${head} · ${stepName} ${prog.nextStepKg.toFixed(1)} kg까지 ${toNext} kg`
+    return { head, tail: `${stepName} ${prog.nextStepKg.toFixed(1)} kg까지 ${toNext} kg` }
+  }
+  const line = progressLine()
+
+  // 시작과 목표 사이의 눈금. 너무 촘촘해지지 않게 간격을 고른다.
+  const scaleTicks: number[] = []
+  if (profile && hasSpan) {
+    const total = profile.startWeightKg - profile.goalWeightKg
+    const step = [1, 2, 5, 10, 20].find((v) => total / v <= 12) ?? 50
+    for (let kg = Math.ceil(profile.goalWeightKg / step) * step; kg < profile.startWeightKg; kg += step) {
+      const at = (profile.startWeightKg - kg) / total
+      if (at > 0.02 && at < 0.98) scaleTicks.push(at)
+    }
   }
 
   return (
@@ -171,17 +215,32 @@ export default function Trend() {
                       )}
                       <div
                         className="trend-progress-now"
-                        style={{ left: `clamp(8px, ${prog.ratio * 100}%, calc(100% - 8px))` }}
+                        style={{ left: `clamp(7px, ${prog.ratio * 100}%, calc(100% - 7px))` }}
                       />
                     </div>
-                    <div className="trend-progress-ends num" aria-hidden="true">
-                      <span>시작 {profile.startWeightKg.toFixed(1)}</span>
-                      <span>목표 {profile.goalWeightKg.toFixed(1)}</span>
+                    <div className="trend-progress-scale" aria-hidden="true">
+                      {scaleTicks.map((at) => (
+                        <span key={at} style={{ left: `${at * 100}%` }} />
+                      ))}
+                    </div>
+                    <div className="trend-progress-ends" aria-hidden="true">
+                      <span>
+                        시작 <b className="num">{profile.startWeightKg.toFixed(1)}</b>
+                      </span>
+                      <span>
+                        목표 <b className="num">{profile.goalWeightKg.toFixed(1)}</b>
+                      </span>
                     </div>
                   </div>
                 )}
                 <p className="trend-hero-msg num" data-testid="trend-progress">
-                  {progressLine()}
+                  <span className="trend-hero-msg-line">{line.head}</span>
+                  {line.tail !== null && (
+                    <>
+                      <span className="trend-hero-msg-sep"> · </span>
+                      <span className="trend-hero-msg-line trend-hero-msg-tail">{line.tail}</span>
+                    </>
+                  )}
                 </p>
               </>
             )}
@@ -206,30 +265,34 @@ export default function Trend() {
         </h2>
         {weights.length < 2 ? (
           <div className="trend-empty">
+            <GhostLine />
             <p>체중을 이틀 이상 기록하면 추세선이 나타나요.</p>
             <p className="small muted">매일 조금씩 달라지는 숫자 대신, 어느 쪽으로 가고 있는지 보여 드려요.</p>
           </div>
         ) : visible.length < 2 ? (
           <div className="trend-empty">
+            <GhostLine />
             <p>이 기간에는 체중 기록이 부족해요.</p>
             <p className="small muted">더 긴 기간을 선택하거나 체중을 며칠 더 기록해 보세요.</p>
           </div>
         ) : (
           <>
             <WeightChart points={visible} goalKg={goalKg} />
-            {caption && <p className="small muted trend-caption">{caption}</p>}
+            {caption && <p className="small muted trend-caption num">{caption}</p>}
             {change && (
               <dl className="trend-facts">
                 <div>
                   <dt>{range.phrase} 변화</dt>
-                  <dd className="num" data-testid="trend-change">
-                    {signed(change.delta, 1)} kg
+                  <dd data-testid="trend-change">
+                    <span className="num">{signed(change.delta, 1)}</span>
+                    <span className="trend-fact-unit"> kg</span>
                   </dd>
                 </div>
                 <div>
                   <dt>주간 속도</dt>
-                  <dd className="num" data-testid="trend-rate">
-                    {signed(change.perWeek, 2)} kg/주
+                  <dd data-testid="trend-rate">
+                    <span className="num">{signed(change.perWeek, 2)}</span>
+                    <span className="trend-fact-unit"> kg/주</span>
                   </dd>
                 </div>
               </dl>
@@ -238,7 +301,10 @@ export default function Trend() {
         )}
         {projected && (
           <p className="small muted trend-projection" data-testid="trend-projection">
-            주 <span className="num">{weeklyLossKg}</span> kg씩 줄이는 지금 계획대로면{' '}
+            <span className="trend-nowrap">
+              주 <span className="num">{weeklyLossKg}</span> kg씩
+            </span>{' '}
+            줄이는 지금 계획대로면{' '}
             <span className="num">{monthDay(projected, asOf)}</span>쯤 목표 체중에 닿을 것 같아요. 어디까지나
             예상이라 달라질 수 있어요.
           </p>
@@ -262,7 +328,10 @@ export default function Trend() {
           하루 섭취 칼로리
         </h2>
         {intake.avg === null ? (
-          <p className="muted">이 기간에는 식사 기록이 없어요.</p>
+          <div className="trend-empty trend-empty--bars">
+            <GhostBars />
+            <p>이 기간에는 식사 기록이 없어요.</p>
+          </div>
         ) : (
           <>
             <IntakeChart data={intake.data} targetKcal={targetKcal} />
@@ -301,21 +370,27 @@ export default function Trend() {
           <dl className="trend-facts trend-facts--plan">
             <div>
               <dt>{phase === 'maintain' ? '하루 유지 범위' : '하루 목표 범위'}</dt>
-              <dd className="num" data-testid="plan-range">
-                {fmtKcal(targetRange(plan.targetKcal).low)}~{fmtKcal(targetRange(plan.targetKcal).high)} kcal
+              <dd data-testid="plan-range">
+                <span className="num">
+                  {fmtKcal(targetRange(plan.targetKcal).low)}~{fmtKcal(targetRange(plan.targetKcal).high)}
+                </span>
+                <span className="trend-fact-unit"> kcal</span>
               </dd>
             </div>
             <div>
               <dt>추정 소비 칼로리</dt>
-              <dd className="num">{fmtKcal(plan.tdee)} kcal</dd>
+              <dd>
+                <span className="num">{fmtKcal(plan.tdee)}</span>
+                <span className="trend-fact-unit"> kcal</span>
+              </dd>
             </div>
             <div>
               <dt>{last.kind === 'initial' ? '계획 시작일' : '마지막 체크인'}</dt>
-              <dd className="num">{formatKorean(last.date)}</dd>
+              <dd className="trend-fact-text num">{formatKorean(last.date)}</dd>
             </div>
             <div>
               <dt>다음 체크인</dt>
-              <dd data-testid="plan-next">
+              <dd className="trend-fact-text" data-testid="plan-next">
                 {daysLeft !== null && daysLeft > 0 ? (
                   <>
                     <span className="num">{daysLeft}</span>일 뒤

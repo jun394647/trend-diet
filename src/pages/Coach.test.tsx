@@ -175,7 +175,7 @@ describe('Coach', () => {
     const first = await screen.findByTestId('coach-msg-coach')
     expect(log).toContainElement(first)
     expect(first).toHaveTextContent('그날은 편하게 드세요.')
-    // 마크다운으로 바꾸지 않고 줄바꿈만 그대로 둔다.
+    // 꾸밈이 없는 답은 글 한 덩어리로 두고 줄바꿈을 그대로 지킨다.
     expect(within(first).getByText(/그날은 편하게 드세요/).textContent).toBe('그날은 편하게 드세요.\n한 주 평균으로 보면 돼요.')
     // 횟수가 넉넉할 때는 남은 횟수를 말하지 않는다.
     expect(screen.queryByText(/번 남았어요/)).not.toBeInTheDocument()

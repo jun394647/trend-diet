@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { AiError } from '../../ai/client'
-import { WeekReviewSchema, type CoachContext, type WeekReview } from '../../ai/contract'
+import { WeekReviewSchema, type CoachContext, type WeekReview, type WeekReviewPartial } from '../../ai/contract'
 import { useSync } from '../../sync/store'
 import type { DateStr } from '../../types'
 import { callAiOnce, errorToKeep } from './CoachCall'
@@ -14,12 +14,17 @@ interface WeekReviewState {
   /** 지금 담고 있는 요청이나 결과의 주인(계정 + 날짜). */
   key: string | null
   review: WeekReview | null
+  /**
+   * 쓰이는 중인 돌아보기. pending인 동안 글이 오기 시작하면 채워지고(headline부터 차례로), 끝나면 null이 된다.
+   * 필드 이름과 뜻은 review와 같고, 아직 쓰이지 않은 필드는 없다. 미리 보여 주는 용도일 뿐 저장하지 않는다.
+   */
+  partial: WeekReviewPartial | null
   pending: boolean
   error: AiError | null
 }
 
 const STORAGE_KEY = 'trend-diet:week-review'
-const EMPTY: WeekReviewState = { key: null, review: null, pending: false, error: null }
+const EMPTY: WeekReviewState = { key: null, review: null, partial: null, pending: false, error: null }
 
 export const useWeekReview = create<WeekReviewState>(() => EMPTY)
 
@@ -72,19 +77,25 @@ export async function requestWeekReview(date: DateStr, context: CoachContext, re
   if (before.pending && before.key === key) return
   if (before.pending) epoch++
   const mine = epoch
-  useWeekReview.setState({ key, review: null, pending: true, error: null })
+  useWeekReview.setState({ key, review: null, partial: null, pending: true, error: null })
   try {
-    const review = await callAiOnce({
-      task: 'week-review',
-      context,
-      ...(recommendation ? { recommendation: recommendation.slice(0, 200) } : {}),
-    })
+    const review = await callAiOnce(
+      {
+        task: 'week-review',
+        context,
+        ...(recommendation ? { recommendation: recommendation.slice(0, 200) } : {}),
+      },
+      (partial) => {
+        if (mine !== epoch || !useWeekReview.getState().pending) return
+        useWeekReview.setState({ partial })
+      },
+    )
     if (mine !== epoch) return
     writeStored({ key, review })
-    useWeekReview.setState({ key, review, pending: false, error: null })
+    useWeekReview.setState({ key, review, partial: null, pending: false, error: null })
   } catch (e) {
     if (mine !== epoch) return
-    useWeekReview.setState({ key, review: null, pending: false, error: errorToKeep(e as AiError) })
+    useWeekReview.setState({ key, review: null, partial: null, pending: false, error: errorToKeep(e as AiError) })
   }
 }
 

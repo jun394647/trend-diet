@@ -1,7 +1,28 @@
 /* 설정 화면의 다른 구획 제목과 같은 크기. */
 .acc-title {
-  font-size: 1.0625rem;
+  font-size: 1.125rem;
   font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+}
+
+.acc-intro {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* ── 로그인한 상태 ── */
+
+.acc-me {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.acc-me > p {
+  line-height: 1.55;
+  text-wrap: pretty;
 }
 
 .acc-email {
@@ -9,23 +30,104 @@
   overflow-wrap: anywhere;
 }
 
+/* 동기화 상태: 글 앞의 작은 점이 상태를 함께 알린다(글이 먼저, 색은 거들 뿐). */
+.acc-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.acc-status::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.acc-status--ok::before {
+  background: var(--good);
+  box-shadow: 0 0 0 3px var(--good-soft);
+}
+
+.acc-status--error::before {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+
+.acc-status--syncing::before {
+  background: var(--accent);
+  animation: acc-pulse 1.2s var(--ease-in-out) infinite;
+}
+
+@keyframes acc-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
 .acc-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr auto;
   gap: 8px;
 }
 
-/* 고를 수 있는 길 하나: 버튼과 그 버튼이 하는 일의 설명. */
-.acc-choice {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.btn.acc-out {
+  padding: 0 16px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+/* ── 로그인 폼 ── */
+
+.stack.acc-form {
+  gap: 16px;
+}
+
+.acc-form .field {
+  gap: 8px;
+}
+
+.acc-form .field > label {
+  line-height: 20px;
+}
+
+.acc-form .input {
+  transition: border-color var(--dur-1) ease;
+}
+
+.acc-form .input:focus-visible {
+  border-color: var(--accent);
+  outline-offset: -1px;
+}
+
+.acc-form .field-error,
+.acc-form .banner {
+  line-height: 1.5;
+}
+
+.acc-form .banner {
+  display: block;
+}
+
+.btn.acc-google {
+  min-height: 48px;
+  gap: 10px;
+}
+
+.acc-form .segmented > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .acc-or {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  line-height: 20px;
 }
 
 .acc-or::before,
@@ -34,4 +136,23 @@
   flex: 1;
   height: 1px;
   background: var(--border);
+}
+
+/* ── 기록이 양쪽에 있을 때 ── */
+
+.acc-conflict > p {
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* 고를 수 있는 길 하나: 버튼과 그 버튼이 하는 일의 설명. */
+.acc-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.acc-choice > p {
+  line-height: 1.5;
+  padding: 0 4px;
 }

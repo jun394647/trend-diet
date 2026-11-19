@@ -1,9 +1,22 @@
+/*
+ * 오늘 화면. 공통 클래스를 덮어쓰는 규칙은 클래스를 겹쳐 우선순위를 올린다(불러오는 순서에 기대지 않는다).
+ * 간격은 4px의 배수로 맞춘다. 구획 사이는 40px(선 위아래 20px씩), 구획 안은 8~16px.
+ */
+
+/*
+ * 화면이 나타나는 움직임이 끝난 뒤에는 animation이 남아 있지 않게 한다.
+ * 남아 있으면 이 화면이 겹침 맥락이 되어, 안에서 띄운 식사 시트가 아래 탭 밑에 깔린다.
+ */
+.page.today {
+  animation-fill-mode: backwards;
+}
+
 .today-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 4px;
-  margin-inline: -8px;
+  margin-inline: -12px;
 }
 
 .today-title {
@@ -18,6 +31,7 @@
 
 .today-title .page-title {
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .today-jump {
@@ -26,48 +40,107 @@
   margin-top: -12px;
 }
 
+.today-jump .btn {
+  min-height: 44px;
+  font-size: 0.9375rem;
+}
+
 .section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 12px;
+  min-height: 28px;
+  margin-bottom: 8px;
 }
 
 .section-head .card-title {
   margin-bottom: 0;
 }
 
+.today .banner > span {
+  text-wrap: pretty;
+}
+
 /* ── 먹은 양 패널 ── */
 
+.panel.today-hero {
+  padding: 24px 24px 22px;
+}
+
 .today-hero .card-title {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.big-num.today-hero-num {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 3.5rem;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+
+.today-hero-num .unit {
+  margin-left: 0;
+  font-size: 1rem;
+  color: var(--panel-text-2);
+  opacity: 1;
 }
 
 .today-hero-msg {
-  margin-top: 14px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--panel-line);
   font-size: 0.9375rem;
+  line-height: 1.5;
   color: var(--panel-text);
+  text-wrap: pretty;
 }
 
+/* 줄이 바뀌어도 '목표 범위 안이에요.'는 한 덩어리로 다음 줄에 내려가게 한다. */
+.today-hero-keep {
+  white-space: nowrap;
+}
+
+.today-hero-msg .num {
+  font-weight: 700;
+}
+
+/*
+ * 눈금. 어두운 홈(track) 위에 꿀색 구간(목표 범위)이 놓이고, 밝은 막대가 왼쪽에서 자라난다.
+ * 막대 끝의 둥근 표식이 '지금 위치'다.
+ */
 .gauge {
-  margin-top: 20px;
+  margin-top: 28px;
 }
 
 .gauge-track {
   position: relative;
-  height: 14px;
+  height: 12px;
   border-radius: 999px;
   background: var(--panel-line);
+  box-shadow: inset 0 1px 0 rgb(0 0 0 / 18%);
+}
+
+.gauge-band,
+.gauge-band-ends {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
 }
 
 .gauge-band {
-  position: absolute;
-  top: -5px;
-  bottom: -5px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--panel-mark) 38%, transparent);
-  box-shadow: inset 0 0 0 1.5px var(--panel-mark);
+  background: color-mix(in srgb, var(--panel-mark) 42%, transparent);
+}
+
+/* 범위의 양 끝: 홈 위아래로 조금 나온 가는 눈금 둘 */
+.gauge-band-ends {
+  top: -6px;
+  bottom: -6px;
+  border-inline: 2px solid var(--panel-mark);
+  border-radius: 2px;
 }
 
 .gauge-fill {
@@ -75,70 +148,225 @@
   left: 0;
   top: 0;
   bottom: 0;
+  min-width: 12px;
   border-radius: 999px;
   background: var(--panel-text);
-  transition: width 0.3s ease;
+  transition: width var(--dur-3) var(--ease-out);
+  animation: gauge-fill calc(var(--dur-3) * 2) var(--ease-out) backwards;
 }
 
 .gauge-dot {
   position: absolute;
   top: 50%;
-  width: 20px;
-  height: 20px;
-  margin: -10px 0 0 -10px;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
   border-radius: 50%;
   background: var(--panel-text);
-  border: 4px solid var(--panel);
-  box-shadow: 0 0 0 2px var(--panel-text);
-  transition: left 0.3s ease;
+  /* 패널 색 테두리로 막대에서 도려낸 것처럼 보이게 한다. */
+  box-shadow:
+    0 0 0 3px var(--panel),
+    0 2px 6px 3px rgb(0 0 0 / 28%);
+  transition: left var(--dur-3) var(--ease-out);
+  animation: gauge-dot calc(var(--dur-3) * 2) var(--ease-out) backwards;
+}
+
+/* 표식 한가운데의 꿀색 점: 지금 위치 */
+.gauge-dot::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: var(--mark);
+}
+
+@keyframes gauge-fill {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes gauge-dot {
+  from {
+    left: 0;
+  }
 }
 
 .gauge-scale {
   position: relative;
-  height: 20px;
-  margin-top: 10px;
+  height: 18px;
+  margin-top: 12px;
   font-size: 0.75rem;
+  line-height: 18px;
   color: var(--panel-text-2);
 }
 
 .gauge-scale > span {
   position: absolute;
-  transform: translateX(-50%);
+  top: 0;
   white-space: nowrap;
+}
+
+.gauge-zero {
+  left: 0;
+  opacity: 0.7;
+}
+
+.gauge-range {
+  transform: translateX(-50%);
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--panel-mark);
+}
+
+/* ── 자주 먹는 것 바로 기록 ── */
+
+/* 한 줄로 두고 옆으로 민다. 화면 가장자리까지 닿게 여백만큼 밖으로 내보낸다. */
+.quick {
+  display: flex;
+  gap: 8px;
+  margin: -12px calc(-1 * var(--gutter)) -4px;
+  padding: 4px var(--gutter);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: var(--gutter);
+  scrollbar-width: none;
+}
+
+.quick::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-btn {
+  appearance: none;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  min-height: 44px;
+  max-width: 240px;
+  padding: 0 14px 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) ease,
+    border-color var(--dur-1) ease;
+}
+
+.quick-btn svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+@media (hover: hover) {
+  .quick-btn:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  }
+}
+
+.quick-btn:active {
+  transform: scale(0.96);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.quick-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.quick-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-kcal {
+  flex-shrink: 0;
+  margin-left: 2px;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 /* ── 식사 목록 ── */
 
-.meal-list > li {
-  padding: 2px 0;
-  min-height: 50px;
+.list.meal-list > li {
+  padding: 0;
+  min-height: 52px;
+  gap: 12px;
+}
+
+.meal-list > li > .icon-btn {
+  margin-right: -12px;
+  margin-left: -8px;
 }
 
 .meal-name {
   flex: 1 1 0;
   min-width: 0;
+  padding: 12px 0;
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .meal-kcal {
   flex: 0 0 auto;
   white-space: nowrap;
+  font-weight: 600;
+}
+
+.meal-unit {
+  font-size: 0.8125rem;
+  font-weight: 500;
   color: var(--text-2);
+}
+
+/* 아직 기록이 없을 때: 빈 접시처럼 점선 동그라미 하나와 한 줄 */
+.meal-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  font-size: 0.9375rem;
+  text-wrap: pretty;
+}
+
+.meal-empty::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px dashed color-mix(in srgb, var(--text-2) 55%, transparent);
+}
+
+.today .card > .field-error {
+  margin-top: 8px;
 }
 
 /* ── 한 주 ── */
 
 .week-plot {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-}
-
-.week-plot {
   --week-bar-h: 88px;
   /* 막대 아래의 요일 글자와 체중 점이 차지하는 높이 */
-  --week-foot: 46px;
+  --week-foot: 50px;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  /* 고른 날의 숫자가 막대 위에 놓일 자리 */
+  padding-top: 20px;
 }
 
 /* 막대 영역에만 걸치는 목표 범위 띠. --lo, --hi는 막대 영역 높이에 대한 비율(0~1). */
@@ -148,9 +376,10 @@
   right: 0;
   bottom: calc(var(--week-foot) + var(--week-bar-h) * var(--lo));
   height: calc(var(--week-bar-h) * (var(--hi) - var(--lo)));
+  min-height: 6px;
   background: var(--mark-soft);
-  border-block: 1.5px dashed var(--mark);
-  border-radius: 4px;
+  border-block: 1px dashed var(--mark);
+  border-radius: 3px;
   pointer-events: none;
 }
 
@@ -158,15 +387,36 @@
   appearance: none;
   border: 0;
   background: transparent;
-  padding: 0;
+  padding: 0 0 6px;
   cursor: pointer;
   position: relative;
   display: grid;
-  grid-template-rows: var(--week-bar-h) 24px 10px;
-  row-gap: 6px;
+  grid-template-rows: var(--week-bar-h) 28px 6px;
+  row-gap: 5px;
   justify-items: center;
-  border-radius: 10px;
+  border-radius: var(--radius-xs);
   min-width: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 고른 날: 칸 전체에 옅은 바탕이 깔린다(요일 글자의 색만으로 구분하지 않는다). 범위 띠보다 아래에 그린다. */
+.week-day::before {
+  content: '';
+  position: absolute;
+  inset: -20px 0 0;
+  z-index: -1;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  opacity: 0;
+  transition: opacity var(--dur-1) ease;
+}
+
+.week-day.is-selected::before {
+  opacity: 0.7;
+}
+
+.week-day:not(:disabled):active::before {
+  opacity: 1;
 }
 
 .week-day:disabled {
@@ -188,17 +438,49 @@
 }
 
 .week-bar {
-  width: min(22px, 70%);
-  border-radius: 5px 5px 2px 2px;
+  width: min(20px, 62%);
+  height: var(--h);
+  border-radius: 6px 6px 2px 2px;
   background: var(--accent);
+  transform-origin: bottom;
+  transition:
+    height var(--dur-3) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+  animation: week-bar var(--dur-3) var(--ease-out) backwards;
+  animation-delay: calc(var(--i) * var(--dur-1) / 3);
 }
 
+@keyframes week-bar {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+.week-day:not(:disabled):active .week-bar {
+  transform: scaleX(1.12);
+}
+
+/* 넘은 날도 나무라는 색이 되지 않게, 경고색을 바탕에 조금 섞어 누그러뜨린다. */
 .week-day--over .week-bar {
-  background: var(--warn);
+  background: color-mix(in srgb, var(--warn) 72%, var(--bg));
 }
 
 .week-day--under .week-bar {
-  background: color-mix(in srgb, var(--accent) 55%, var(--bg));
+  background: color-mix(in srgb, var(--accent) 50%, var(--bg));
+}
+
+.week-val {
+  position: absolute;
+  left: 50%;
+  /* 막대 높이와 상관없이 칸 맨 위에 둔다. 막대가 범위 띠에 닿아도 숫자와 겹치지 않는다. */
+  bottom: calc(100% + 3px);
+  transform: translateX(-50%);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0;
+  color: var(--text);
+  white-space: nowrap;
 }
 
 .week-empty {
@@ -210,18 +492,24 @@
 }
 
 .week-dow {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   font-size: 0.8125rem;
   font-weight: 700;
+  line-height: 1;
   color: var(--text-2);
+  transition:
+    background-color var(--dur-1) ease,
+    color var(--dur-1) ease;
 }
 
+/* 오늘: 꿀색 고리(지금 위치) */
 .week-day.is-today .week-dow {
-  color: var(--accent);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--mark);
 }
 
 .week-day.is-selected .week-dow {
@@ -229,13 +517,17 @@
   color: var(--bg);
 }
 
+.week-day.is-selected.is-today .week-dow {
+  box-shadow: none;
+}
+
 .week-day:disabled .week-dow {
   opacity: 0.45;
 }
 
 .week-weighed {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
 }
 
@@ -247,7 +539,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 8px;
+  font-size: 0.75rem;
 }
 
 .week-legend-band {
@@ -255,12 +548,12 @@
   height: 8px;
   border-radius: 2px;
   background: var(--mark-soft);
-  border-block: 1.5px dashed var(--mark);
+  border-block: 1px dashed var(--mark);
 }
 
 .week-legend-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--text-2);
   margin-left: 10px;
@@ -269,51 +562,6 @@
 .week-summary {
   margin-top: 12px;
   font-size: 0.9375rem;
-}
-
-/* ── 자주 먹는 것 바로 기록 ── */
-
-.quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: -8px;
-}
-
-.quick-btn {
-  appearance: none;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  min-height: 44px;
-  max-width: 100%;
-  padding: 0 14px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.quick-btn:active {
-  background: var(--surface-2);
-}
-
-.quick-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.quick-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.quick-kcal {
-  flex-shrink: 0;
-  color: var(--text-2);
-  font-size: 0.875rem;
+  line-height: 1.5;
+  text-wrap: pretty;
 }

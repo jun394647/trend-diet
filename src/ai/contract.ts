@@ -193,3 +193,45 @@ export interface AiStatus {
   /** 로그인 토큰을 함께 보냈을 때만 온다: 오늘 이미 쓴 횟수. 알 수 없으면 없다. */
   used?: number
 }
+
+// ── 조금씩 받는 응답(스트리밍) ──────────────────────────────────────
+//
+// 글로 읽는 task(ask, week-review)는 다 쓰일 때까지 기다리지 않고 쓰이는 대로 받을 수 있다.
+// 화면이 요청에 `Accept: text/event-stream` 을 붙이면, 서버는 로그인·형식·한도 확인까지는 평소처럼 하고
+// (거기서 실패하면 평소와 같은 JSON 오류와 상태 코드로 답한다) 그 뒤로는 HTTP 200에 SSE로 보낸다.
+// 사건 하나는 `data: <JSON 한 줄>` 과 빈 줄이고, JSON의 type으로 종류를 구분한다.
+//
+//   data: {"type":"start","usage":{…}}        횟수를 쓴 직후 한 번. 이때부터 오늘 사용량을 알 수 있다.
+//   data: {"type":"partial","result":{…}}     지금까지 쓰인 만큼. 매번 처음부터 지금까지의 전체이므로 앞의 것을 덮어쓰면 된다.
+//   data: {"type":"done","ok":true,"result":{…},"usage":{…}}     마지막. 평소 응답(AiResponse)과 같은 내용.
+//   data: {"type":"error","ok":false,"error":"busy","usage":{…}}  마지막. 평소 오류(AiErrorBody)와 같은 내용.
+//
+// done이나 error 없이 끊기면 받지 못한 것이다(화면은 busy로 다룬다). partial은 화면에 미리 보여 주는 용도일 뿐이고,
+// 저장하거나 다음 요청에 쓰는 값은 언제나 done의 result다. Accept를 붙이지 않으면 예전처럼 JSON 한 덩어리로 답한다.
+
+/** 조금씩 받겠다고 알리는 Accept 값이자, 그렇게 답할 때의 Content-Type. */
+export const AI_STREAM_MIME = 'text/event-stream'
+
+/** 조금씩 받을 수 있는 task. 그 밖의 task는 Accept를 붙여도 JSON 한 덩어리로 답한다. */
+export const AI_STREAM_TASKS = ['ask', 'week-review'] as const
+export type AiStreamTask = (typeof AI_STREAM_TASKS)[number]
+
+export function isAiStreamTask(task: string): task is AiStreamTask {
+  return (AI_STREAM_TASKS as readonly string[]).includes(task)
+}
+
+/**
+ * 쓰이는 중인 결과. 완성된 결과와 필드 이름과 뜻이 같고, 아직 쓰이지 않은 필드는 없다.
+ * 글은 쓰인 데까지만 들어 있고(마지막 문장이 끊겨 있을 수 있다), 목록은 쓰인 항목까지만 들어 있다.
+ */
+export interface AiPartialMap {
+  ask: { answer: string }
+  'week-review': { headline?: string; wins?: string[]; observations?: string[]; nextStep?: string }
+}
+export type WeekReviewPartial = AiPartialMap['week-review']
+
+export type AiStreamEvent<T extends AiTask = AiTask> =
+  | { type: 'start'; usage: AiUsage }
+  | { type: 'partial'; result: T extends AiStreamTask ? AiPartialMap[T] : never }
+  | ({ type: 'done' } & AiResponse<T>)
+  | ({ type: 'error' } & AiErrorBody)

@@ -1,15 +1,15 @@
-/* 체중 차트와 섭취 차트가 함께 쓰는 범례와 툴팁도 여기에 둔다. */
+/* 체중 차트와 섭취 차트가 함께 쓰는 눈금 글자, 범례, 툴팁도 여기에 둔다. */
 
 .weight-chart {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
 .weight-chart-plot {
   width: 100%;
-  height: 240px;
+  height: 232px;
   min-width: 0;
 }
 
@@ -19,14 +19,64 @@
   outline: none;
 }
 
+/* 눈금 글자는 작고 조용하게. 계열 색이 아니라 글자 색을 쓴다. */
+.chart-tick {
+  fill: var(--text-2);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.chart-goal-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+/* 추세선은 처음 한 번 왼쪽에서 오른쪽으로 그려지고, 끝점은 그 뒤에 찍힌다. */
+.weight-chart-trend .recharts-line-curve,
+.weight-chart-area .recharts-area-area {
+  animation: chart-draw 700ms var(--ease-in-out) both;
+}
+
+.weight-chart-end {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chart-end-in var(--dur-2) var(--ease-out) 620ms both;
+}
+
+@keyframes chart-draw {
+  from {
+    clip-path: inset(-12px 100% -12px -12px);
+  }
+  to {
+    clip-path: inset(-12px);
+  }
+}
+
+@keyframes chart-end-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
 .chart-legend {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  font-size: 0.8125rem;
+  gap: 4px 16px;
+  font-size: 0.75rem;
+  line-height: 1.5;
   color: var(--text-2);
 }
 
@@ -36,34 +86,94 @@
   gap: 6px;
 }
 
+.chart-legend .num {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 툴팁은 떠 있는 것이라 그림자를 쓴다. */
 .chart-tip {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-float);
+  padding: 10px 12px;
   font-size: 0.8125rem;
+  line-height: 1.4;
   color: var(--text);
-  min-width: 128px;
+  min-width: 136px;
+  white-space: nowrap;
 }
 
 .chart-tip-date {
-  font-weight: 700;
-  margin-bottom: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 6px;
 }
 
 .chart-tip-row {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   color: var(--text-2);
 }
 
+.chart-tip-row + .chart-tip-row {
+  margin-top: 2px;
+}
+
+.chart-tip-row > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .chart-tip-row > .num {
-  color: var(--text);
+  font-family: var(--font-display);
   font-weight: 600;
+  color: var(--text);
+}
+
+.chart-tip-row--main > .num {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.chart-tip-row small {
+  font-family: var(--font-body);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.chart-tip-key {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.chart-tip-key--trend {
+  background: var(--accent);
+}
+
+.chart-tip-key--raw {
+  width: 6px;
+  height: 6px;
+  margin: 0 1px;
+  background: var(--text-2);
+  opacity: 0.5;
 }
 
 .chart-tip-state {
-  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
   font-weight: 600;
 }

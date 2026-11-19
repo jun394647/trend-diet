@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import type { CoachContext } from '../ai/contract'
 import { useAi } from '../ai/store'
 import { useAiAvailability } from '../ai/useAiAvailability'
 import { AiConflictHint, AiDisclaimer, AiLimitNote, AiQuotaLeft, AiTag } from '../components/ai/AiBits'
+import CoachAnswer from '../components/ai/CoachAnswer'
 import { isRetryable } from '../components/ai/CoachCall'
 import { useCoachContext } from '../components/ai/CoachHooks'
 import { MAX_QUESTION, useCoach } from '../components/ai/CoachStore'
@@ -31,6 +32,33 @@ function isCoarsePointer(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
 }
 
+/** 적은 만큼 입력 칸이 스스로 늘어나는 브라우저인지(CSS field-sizing). 아니면 높이를 직접 맞춘다. */
+function growsByItself(): boolean {
+  return typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('field-sizing', 'content')
+}
+
+/** 답을 기다리는 동안의 한 줄. 대화 자리(role="log")가 읽어 주므로 따로 알리는 역할은 두지 않는다. */
+function Waiting() {
+  return (
+    <p className="ai-loading coach-wait">
+      <span className="ai-loading-dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      답을 쓰는 중이에요
+    </p>
+  )
+}
+
+function Who() {
+  return (
+    <span className="coach-who">
+      <AiTag /> 코치
+    </span>
+  )
+}
+
 export default function Coach() {
   const ai = useAiAvailability()
   const checked = useAi((s) => s.checked)
@@ -45,7 +73,7 @@ export default function Coach() {
     // 다른 화면에 다녀오면 처음부터 막힌 것과 같아 홈으로 보낸다.
     if (forbidden && wasUsable) {
       return (
-        <main className="page">
+        <main className="page coach-gate">
           <h1 className="page-title">코치</h1>
           <p role="alert">이 계정은 AI 기능을 쓸 수 없어요.</p>
           <Link className="btn btn--primary btn--block btn--lg" to="/">
@@ -57,18 +85,23 @@ export default function Coach() {
     // 준비 여부나 로그인 상태를 아직 확인하는 중이면 기다리고, 준비되지 않은 게 확실하면 홈으로 보낸다.
     if (checked && sessionKnown) return <Navigate to="/" replace />
     return (
-      <main className="page">
+      <main className="page coach-gate">
         <h1 className="page-title">코치</h1>
-        <p className="muted">불러오는 중…</p>
+        <p className="muted small">불러오는 중…</p>
+        <div className="coach-gate-skeleton" aria-hidden="true">
+          <span className="skeleton" />
+          <span className="skeleton" />
+          <span className="skeleton" />
+        </div>
       </main>
     )
   }
 
   if (ai === 'login') {
     return (
-      <main className="page">
+      <main className="page coach-gate">
         <h1 className="page-title">코치</h1>
-        <p>{ABOUT} 로그인하면 코치에게 궁금한 것을 물어볼 수 있어요.</p>
+        <p className="coach-gate-lead">{ABOUT} 로그인하면 코치에게 궁금한 것을 물어볼 수 있어요.</p>
         <Link className="btn btn--primary btn--block btn--lg" to="/settings">
           설정에서 로그인
         </Link>
@@ -78,9 +111,9 @@ export default function Coach() {
 
   if (ai === 'conflict') {
     return (
-      <main className="page">
+      <main className="page coach-gate">
         <h1 className="page-title">코치</h1>
-        <p>{ABOUT}</p>
+        <p className="coach-gate-lead">{ABOUT}</p>
         <AiConflictHint />
       </main>
     )
@@ -130,11 +163,20 @@ function CoachChat({ limited }: { limited: boolean }) {
     endRef.current?.scrollIntoView?.({ block: 'end' })
   }, [messages.length, last, pending, shownError])
 
+  // field-sizing을 모르는 브라우저에서는 적은 만큼 입력 칸 높이를 직접 맞춘다(최대 높이는 CSS가 막는다).
+  const [selfGrowing] = useState(growsByItself)
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el || selfGrowing) return
+    el.style.height = 'auto'
+    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight}px`
+  }, [draft, selfGrowing])
+
   if (!context) {
     return (
-      <main className="page">
+      <main className="page coach-gate">
         <h1 className="page-title">코치</h1>
-        <p>아직 계획이 없어서 코치가 볼 기록이 없어요. 먼저 기본 정보를 입력해 주세요.</p>
+        <p className="coach-gate-lead">아직 계획이 없어서 코치가 볼 기록이 없어요. 먼저 기본 정보를 입력해 주세요.</p>
         <Link className="btn btn--primary btn--block btn--lg" to="/">
           오늘 화면으로 가기
         </Link>
@@ -231,11 +273,11 @@ function CoachChat({ limited }: { limited: boolean }) {
       <div className="coach-body">
         {messages.length === 0 && (
           <div className="coach-intro">
-            <p>코치는 내 기본 정보와 최근 2주의 체중·식사 기록, 지금 계획을 AI에 보내 답을 받아요.</p>
+            <p className="coach-sees">코치는 내 기본 정보와 최근 2주의 체중·식사 기록, 지금 계획을 AI에 보내 답을 받아요.</p>
             {/* 횟수를 다 썼으면 오늘은 보낼 수 없으니 예시 질문도 권하지 않는다. */}
             {!limited && (
               <div className="coach-starters-block">
-                <p className="small muted" id="coach-starters-caption">
+                <p className="coach-starters-caption" id="coach-starters-caption">
                   이런 걸 물어볼 수 있어요. 누르면 입력 칸에 들어가요.
                 </p>
                 <ul className="coach-starters" aria-labelledby="coach-starters-caption">
@@ -269,29 +311,19 @@ function CoachChat({ limited }: { limited: boolean }) {
                     className="coach-msg coach-msg--coach"
                     data-testid="coach-msg-coach"
                   >
-                    <span className="coach-who">
-                      <AiTag /> 코치
-                    </span>
-                    <p className="coach-text">{m.text}</p>
+                    <Who />
+                    {/* 답이 조금씩 채워질 수 있다. 아직 한 글자도 없으면 기다리는 줄을 대신 보여 준다. */}
+                    {m.text === '' && pending && i === messages.length - 1 ? <Waiting /> : <CoachAnswer text={m.text} />}
                   </li>
                 ),
               )}
               {unanswered && (pending || shownError !== null) && (
                 <li className="coach-msg coach-msg--coach" data-testid="coach-msg-wait">
-                  <span className="coach-who">
-                    <AiTag /> 코치
-                  </span>
+                  <Who />
                   {pending ? (
-                    <p className="ai-loading">
-                      <span className="ai-loading-dots" aria-hidden="true">
-                        <span />
-                        <span />
-                        <span />
-                      </span>
-                      답을 쓰는 중이에요
-                    </p>
+                    <Waiting />
                   ) : shownError !== null ? (
-                    <div className="ai-error">
+                    <div className="ai-error coach-error">
                       <p>{shownError.message}</p>
                       {shownError.code === 'unauthorized' && (
                         <Link className="btn" to="/settings">
@@ -318,7 +350,7 @@ function CoachChat({ limited }: { limited: boolean }) {
       </div>
 
       <form className="coach-composer" ref={composerRef} onSubmit={onSubmit}>
-        <div className="coach-composer-row">
+        <div className={limited ? 'coach-field coach-field--off' : 'coach-field'}>
           <label className="coach-sr" htmlFor="coach-input">
             코치에게 물어볼 내용
           </label>
@@ -336,8 +368,26 @@ function CoachChat({ limited }: { limited: boolean }) {
             onKeyDown={onKeyDown}
           />
           {/* 보낸 직후에도 초점을 잃지 않게 disabled 대신 aria-disabled로 막는다. 보내는 쪽과 저장소가 한 번 더 막는다. */}
-          <button type="submit" className="btn btn--primary coach-send" aria-disabled={cannotSend}>
-            보내기
+          <button
+            type="submit"
+            className={pending ? 'btn btn--primary coach-send coach-send--pending' : 'btn btn--primary coach-send'}
+            aria-label="보내기"
+            aria-disabled={cannotSend}
+          >
+            {pending ? (
+              <span className="coach-send-busy" aria-hidden="true" />
+            ) : (
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                <path
+                  d="M12 19V5.5M6 11.25 12 5.25l6 6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
           </button>
         </div>
         <div className="coach-meta" data-testid="coach-meta">

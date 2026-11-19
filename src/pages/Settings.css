@@ -1,13 +1,51 @@
 /* main.tsx가 index.css를 화면 CSS보다 나중에 불러오므로, 공통 클래스를 덮어쓰는 규칙은 클래스를 겹쳐 우선순위를 올린다. */
 
+/* 긴 화면이라 구획 사이를 넉넉히 띄워, 선 하나와 제목만으로 구획이 읽히게 한다. */
+.page.st {
+  gap: 28px;
+}
+
+.st > .card {
+  padding-top: 24px;
+}
+
+.st > .card.stack {
+  gap: 12px;
+}
+
 /* 구획 제목. 설정은 구획이 길어서 작은 머리글 대신 본문보다 큰 제목을 쓴다. */
 .st-title {
-  font-size: 1.0625rem;
+  font-size: 1.125rem;
   font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+}
+
+.st-title + .pf,
+.st-title + .stack {
+  margin-top: 4px;
+}
+
+.st > .card > p {
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.st-fine + .st-fine {
+  margin-top: -4px;
 }
 
 .banner.st-notice {
   display: block;
+  line-height: 1.5;
+  animation: st-in var(--dur-2) var(--ease-out) both;
+}
+
+@keyframes st-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 /* ── 지금 단계 패널 ── */
@@ -15,7 +53,7 @@
 .st-phase {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .st-phase-head {
@@ -24,6 +62,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+  min-height: 28px;
 }
 
 .st-phase-head .card-title {
@@ -32,8 +71,9 @@
 
 .st-phase-label {
   font-size: 0.875rem;
+  line-height: 20px;
   color: var(--panel-text-2);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .big-num.st-phase-range {
@@ -46,32 +86,44 @@
 .st-phase-desc,
 .st-phase-confirm > p {
   font-size: 0.9375rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.st-phase-desc {
+  margin-top: -4px;
+  color: var(--panel-text-2);
 }
 
 .st-phase-hint {
   font-size: 0.8125rem;
+  line-height: 1.55;
   color: var(--panel-text-2);
+  text-wrap: pretty;
 }
 
 .st-phase-notice {
-  padding: 10px 0 0;
+  padding: 12px 0 0;
   border-top: 1px solid var(--panel-line);
   font-size: 0.9375rem;
   font-weight: 700;
+  line-height: 1.5;
+  animation: st-in var(--dur-2) var(--ease-out) both;
 }
 
 .st-phase-confirm {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 14px;
+  padding-top: 16px;
   border-top: 1px solid var(--panel-line);
+  animation: st-in var(--dur-2) var(--ease-out) both;
 }
 
 /* 패널 위의 버튼은 패널 색을 따른다. */
 .st-phase .st-phase-btn {
-  background: transparent;
-  border-color: var(--panel-text-2);
+  background: color-mix(in srgb, var(--panel-text) 8%, transparent);
+  border-color: color-mix(in srgb, var(--panel-text) 28%, transparent);
   color: var(--panel-text);
 }
 
@@ -85,12 +137,39 @@
   outline-color: var(--panel-text);
 }
 
+/* ── 백업 ── */
+
+.st-last-backup {
+  font-variant-numeric: tabular-nums;
+}
+
+.st-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.st-actions > p {
+  line-height: 1.5;
+  padding: 0 4px;
+}
+
 /* ── 확인 줄 ── */
 
 .st-confirm {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 채운 상자 대신 왼쪽 선 하나로, 되돌릴 수 없는 일이라는 것을 알린다. */
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--danger);
+  animation: st-in var(--dur-2) var(--ease-out) both;
+}
+
+.st-confirm > p {
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
 .st-confirm-actions {
@@ -102,10 +181,15 @@
 /* 삭제는 확인 줄이 열리기 전까지 글자만 보인다. */
 .btn.st-reset-open {
   align-self: flex-start;
+  min-height: 44px;
   padding: 0;
   color: var(--danger);
+  font-size: 0.9375rem;
+  font-weight: 600;
   text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 4px;
 }
 
 /* 파일 선택 칸은 버튼으로 열기 때문에 화면에서는 숨긴다. */
@@ -121,17 +205,52 @@
   white-space: nowrap;
 }
 
+/* ── 앱 정보: 작은 점을 내어 쓴 목록 ── */
+
 .st-notes {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  line-height: 1.6;
+}
+
+.st-notes > li {
+  position: relative;
+  padding-left: 16px;
+  text-wrap: pretty;
+}
+
+.st-notes > li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: calc(0.8em - 2px);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-2);
+  opacity: 0.6;
 }
 
 .st-notes ul {
-  margin: 4px 0 0;
-  padding-left: 18px;
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
   color: var(--text-2);
+}
+
+/* 맨 끝의 버전 줄 */
+.st-version {
+  margin-top: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  opacity: 0.85;
 }

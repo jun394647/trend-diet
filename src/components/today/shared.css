@@ -41,3 +41,22 @@
   width: 20px;
   height: 20px;
 }
+
+.icon-btn {
+  transition:
+    background-color var(--dur-1) ease,
+    color var(--dur-1) ease,
+    transform var(--dur-1) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .icon-btn:not(:disabled):hover {
+    color: var(--text);
+  }
+}
+
+.icon-btn:not(:disabled):active {
+  background: var(--surface-2);
+  color: var(--text);
+  transform: scale(0.94);
+}

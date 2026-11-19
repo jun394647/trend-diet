@@ -30,7 +30,13 @@
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
+  transition: background-color var(--dur-1) ease;
+}
+
+.suggest-toggle:active {
+  background: var(--surface-2);
+  box-shadow: 0 0 0 6px var(--surface-2);
 }
 
 .suggest-toggle:focus-visible {
@@ -48,7 +54,7 @@
   width: 20px;
   height: 20px;
   color: var(--text-2);
-  transition: transform 0.15s ease;
+  transition: transform var(--dur-2) var(--ease-out);
 }
 
 .suggest-toggle[aria-expanded='true'] .suggest-chevron {
@@ -60,6 +66,18 @@
   flex-direction: column;
   gap: 12px;
   padding: 4px 0 8px;
+  animation: suggest-in var(--dur-2) var(--ease-out) both;
+}
+
+@keyframes suggest-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.suggest-body .small.muted {
+  text-wrap: pretty;
 }
 
 .suggest-body[hidden] {
@@ -88,8 +106,15 @@
   white-space: nowrap;
 }
 
-.suggest-list > li {
-  align-items: flex-start;
+/* 추천 줄: 왼쪽에 이름·칼로리·이유를 쌓고, 오른쪽에 기록 버튼을 가운데 맞춰 둔다. */
+.list.suggest-list {
+  border-block: 1px solid var(--border);
+}
+
+.list.suggest-list > li {
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
 }
 
 /* 기록이 바뀌기 전의 추천은 이름만 한 단계 낮춘다. 칼로리와 이유는 그대로 읽히고, 기록 버튼도 그대로 누를 수 있다. */
@@ -109,6 +134,76 @@
 
 .suggest-name {
   font-weight: 600;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+
+.suggest-why {
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+.suggest-unit {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+/* 기록이 바뀐 뒤의 안내: 왼쪽 선 하나로 덧붙인 말임을 알린다. */
+.suggest-stale {
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+
+/* 기다리는 동안의 자리 표시 */
+.suggest-skeleton {
+  border-block: 1px solid var(--border);
+}
+
+.suggest-skeleton > div {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.suggest-skeleton > div:first-child {
+  border-top: 0;
+}
+
+.suggest-skeleton-text {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.suggest-skeleton-text > .skeleton {
+  height: 14px;
+  width: 48%;
+  border-radius: 4px;
+}
+
+.suggest-skeleton-text > .skeleton:nth-child(2) {
+  height: 10px;
+  width: 20%;
+}
+
+.suggest-skeleton-text > .skeleton:nth-child(3) {
+  height: 10px;
+  width: 82%;
+}
+
+.suggest-skeleton > div:nth-child(2) .skeleton:first-child {
+  width: 62%;
+}
+
+.suggest-skeleton-btn {
+  flex: 0 0 auto;
+  width: 76px;
+  height: 44px;
+  border-radius: 999px;
 }
 
 /* 답이 도착하면 초점이 옮겨 오는 자리 */
@@ -135,15 +230,61 @@
 }
 
 .suggest-kcal {
-  color: var(--text-2);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
-.suggest-log {
+.btn.suggest-log {
   flex: 0 0 auto;
-  min-width: 64px;
+  min-width: 76px;
+  min-height: 44px;
+  padding: 0 14px 0 10px;
+  border-radius: 999px;
+  gap: 4px;
+  font-size: 0.9375rem;
   white-space: nowrap;
+}
+
+.suggest-log svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+/* 기록한 추천: 버튼이 테두리 없는 초록 확인 표시로 바뀐다(글자와 모양이 함께 바뀐다). */
+.suggest .is-logged .btn.suggest-log[aria-disabled='true'] {
+  opacity: 1;
+  border-color: transparent;
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.is-logged .suggest-log svg {
+  color: var(--good);
 }
 
 .suggest-note {
   font-size: 0.9375rem;
+  text-wrap: pretty;
+}
+
+/* AI의 한마디: 쪽지처럼 옅은 바탕 위에 AI 표시와 함께 둔다. */
+.suggest-note--ai {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.suggest-note--ai .ai-tag {
+  margin-right: 8px;
+  height: 18px;
+  padding: 0 6px;
+  vertical-align: 1px;
+}
+
+.suggest .ai-disclaimer {
+  margin-top: -4px;
 }

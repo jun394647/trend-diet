@@ -5,7 +5,7 @@
   justify-content: space-between;
   gap: 10px;
   min-height: 28px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .weight-head .card-title {
@@ -37,8 +37,22 @@
   font-variant-numeric: tabular-nums;
 }
 
+.weight-value .unit {
+  font-size: 1rem;
+  color: var(--text-2);
+  opacity: 1;
+}
+
 .weight-trend {
   font-size: 0.9375rem;
+  color: var(--text-2);
+}
+
+.weight-trend b {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .weight-form {
@@ -64,11 +78,21 @@
   transform: translateY(-50%);
   color: var(--text-2);
   font-size: 0.875rem;
+  font-weight: 600;
   pointer-events: none;
 }
 
 .weight-form .btn {
   min-height: 48px;
+  min-width: 72px;
+}
+
+.weight-input-wrap .input {
+  font-weight: 600;
+}
+
+.weight-input-wrap .input::placeholder {
+  font-weight: 400;
 }
 
 .weight-error {

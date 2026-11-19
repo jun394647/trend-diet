@@ -31,3 +31,19 @@ export function TrashIcon() {
     </svg>
   )
 }
+
+export function PlusIcon() {
+  return (
+    <svg {...base}>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  )
+}
+
+export function CheckIcon() {
+  return (
+    <svg {...base}>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  )
+}

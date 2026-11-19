@@ -1,19 +1,33 @@
 .intake-chart {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
 .intake-chart-plot {
   width: 100%;
-  height: 180px;
+  height: 184px;
   min-width: 0;
 }
 
+/* 막대는 처음 한 번 바닥에서 자라난다. */
+.intake-chart-bars .recharts-rectangle {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: intake-bar-in 520ms var(--ease-out) both;
+}
+
+@keyframes intake-bar-in {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* 범례와 툴팁에서 막대 한 개를 본뜬 표시 */
 .intake-key {
   flex: 0 0 auto;
-  width: 10px;
+  width: 8px;
   height: 10px;
   border-radius: 3px 3px 1px 1px;
 }
@@ -23,7 +37,7 @@
   height: 8px;
   border-radius: 2px;
   background: var(--mark-soft);
-  border-block: 1.5px dashed var(--mark);
+  border-block: 1px dashed var(--mark);
 }
 
 .intake-key--in {
@@ -35,5 +49,10 @@
 }
 
 .intake-key--under {
-  background: color-mix(in srgb, var(--accent) 45%, var(--bg));
+  background: color-mix(in srgb, var(--accent) 42%, var(--bg));
+}
+
+/* 마지막 날짜 글자가 막대 가운데에 맞춰 서도 오른쪽 끝에서 잘리지 않게 한다. */
+.intake-chart-plot .recharts-surface {
+  overflow: visible;
 }

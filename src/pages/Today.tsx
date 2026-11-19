@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SuggestMeals from '../components/ai/SuggestMeals'
 import MealSheet from '../components/MealSheet'
 import WeightCard from '../components/WeightCard'
 import { fmtKcal } from '../components/today/format'
-import { ChevronLeft, ChevronRight, TrashIcon } from '../components/today/icons'
+import { ChevronLeft, ChevronRight, PlusIcon, TrashIcon } from '../components/today/icons'
 import IntakeGauge from '../components/today/IntakeGauge'
 import '../components/today/shared.css'
+import { useCountUp } from '../components/today/useCountUp'
 import WeekStrip from '../components/today/WeekStrip'
 import { addDays, formatKorean, formatShort, today } from '../lib/date'
 import { currentPlan } from '../lib/plan'
@@ -16,6 +17,8 @@ import { intakeState, phaseOf, targetRange, weekOfPhase, weekStart, weekSummary 
 import { useStore } from '../store'
 import { useSync } from '../sync/store'
 import type { DateStr, MealEntry } from '../types'
+import InstallHint from '../components/InstallHint'
+import { useLaunchAction } from '../pwa/launchAction'
 import './Today.css'
 
 function mealLabel(m: MealEntry): string {
@@ -40,6 +43,17 @@ export default function Today() {
   const todayStr = today()
   const [date, setDate] = useState<DateStr>(todayStr)
   const [sheetOpen, setSheetOpen] = useState(false)
+
+  // 홈 화면 아이콘을 길게 눌러 고른 바로가기(식사 추가, 체중 기록)를 처리한다.
+  const launch = useLaunchAction()
+  useEffect(() => {
+    if (launch === 'add-meal') setSheetOpen(true)
+    if (launch === 'weight') {
+      const card = document.querySelector('[aria-labelledby="weight-card-title"]')
+      card?.scrollIntoView?.({ block: 'center' })
+      card?.querySelector<HTMLElement>('input, button')?.focus()
+    }
+  }, [launch])
   const [error, setError] = useState<string | null>(null)
 
   const isToday = date === todayStr
@@ -48,6 +62,8 @@ export default function Today() {
   const plan = useMemo(() => currentPlan(checkins), [checkins])
   const dayMeals = useMemo(() => mealsOn(meals, date), [meals, date])
   const eaten = useMemo(() => kcalOn(meals, date), [meals, date])
+  // 먹은 양이 바뀌면 큰 숫자가 짧게 굴러간다. 눈금과 안내 문장은 실제 값을 바로 쓴다.
+  const eatenShown = useCountUp(eaten)
   const checkinDue = useMemo(() => isCheckinDue(checkins, todayStr), [checkins, todayStr])
   const backupDue = useMemo(
     () => isBackupDue(lastBackupAt, weights.length + meals.length > 0, new Date()),
@@ -170,8 +186,8 @@ export default function Today() {
         <h2 className="card-title" id="kcal-card-title">
           {isToday ? '오늘 먹은 양' : '이날 먹은 양'}
         </h2>
-        <p className="big-num">
-          <span data-testid="kcal-eaten">{fmtKcal(eaten)}</span>
+        <p className="big-num today-hero-num">
+          <span data-testid="kcal-eaten">{fmtKcal(eatenShown)}</span>
           <span className="unit">kcal</span>
         </p>
         {plan !== null && (
@@ -185,7 +201,7 @@ export default function Today() {
                     <span className="num">
                       {fmtKcal(range.low - eaten)}~{fmtKcal(range.high - eaten)}
                     </span>{' '}
-                    kcal 더 먹으면 {rangeName} 안이에요.
+                    kcal 더 먹으면 <span className="today-hero-keep">{rangeName} 안이에요.</span>
                   </>
                 ) : (
                   `${rangeName}보다 ${fmtKcal(range.low - eaten)} kcal 적게 기록했어요.`
@@ -217,6 +233,7 @@ export default function Today() {
               aria-label={`${s.name} ${fmtKcal(s.kcal)} kcal 바로 기록`}
               onClick={() => void onQuickLog(s)}
             >
+              <PlusIcon />
               <span className="quick-name">{s.name}</span>
               <span className="quick-kcal num">{fmtKcal(s.kcal)}</span>
             </button>
@@ -232,7 +249,7 @@ export default function Today() {
           {dayMeals.length > 0 && <span className="small muted">{dayMeals.length}건</span>}
         </div>
         {dayMeals.length === 0 ? (
-          <p className="muted">
+          <p className="muted meal-empty">
             {isToday ? '첫 끼를 기록해 볼까요? 대충 적어도 괜찮아요.' : '이날은 기록한 식사가 없어요.'}
           </p>
         ) : (
@@ -240,7 +257,10 @@ export default function Today() {
             {dayMeals.map((m) => (
               <li key={m.id}>
                 <span className="meal-name">{mealLabel(m)}</span>
-                <span className="meal-kcal num">{fmtKcal(m.kcal)} kcal</span>
+                <span className="meal-kcal num">
+                  {fmtKcal(m.kcal)}
+                  <span className="meal-unit"> kcal</span>
+                </span>
                 <button
                   type="button"
                   className="icon-btn"
@@ -290,6 +310,8 @@ export default function Today() {
       )}
 
       <WeightCard key={date} date={date} />
+
+      <InstallHint />
 
       {sheetOpen && <MealSheet date={date} targetKcal={target} onClose={() => setSheetOpen(false)} />}
     </main>

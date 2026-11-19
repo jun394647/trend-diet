@@ -12,11 +12,26 @@
   outline: none;
 }
 
+/* 제목 줄. 사진으로 물었을 때는 보낸 사진이 작게 앞에 붙는다. */
+.mealai-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mealai-head .mealai-title {
+  flex: 1 1 0;
+  min-width: 0;
+  text-wrap: balance;
+}
+
 /* 내가 적은 글: 왼쪽 선으로만 구분한다. */
 .mealai-quote {
+  margin-top: -4px;
   padding-left: 12px;
   border-left: 2px solid var(--border);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .mealai-photo {
@@ -28,8 +43,67 @@
   background: var(--surface-2);
 }
 
-.mealai-photo--small {
-  max-height: 72px;
+.mealai-photo.mealai-photo--small {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-xs);
+}
+
+/* 기다리는 동안: 음식 줄이 놓일 자리 */
+.mealai-skeleton {
+  border-block: 1px solid var(--border);
+}
+
+.mealai-skeleton > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 64px;
+  border-top: 1px solid var(--border);
+}
+
+.mealai-skeleton > div:first-child {
+  border-top: 0;
+}
+
+.mealai-skeleton-check {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.mealai-skeleton-text {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mealai-skeleton-text > .skeleton {
+  height: 14px;
+  border-radius: 4px;
+  width: 44%;
+}
+
+.mealai-skeleton-text > .skeleton:last-child {
+  height: 10px;
+  width: 28%;
+}
+
+.mealai-skeleton > div:nth-child(2) .mealai-skeleton-text > .skeleton:first-child {
+  width: 30%;
+}
+
+.mealai-skeleton > div:nth-child(3) .mealai-skeleton-text > .skeleton:first-child {
+  width: 52%;
+}
+
+.mealai-skeleton-kcal {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 44px;
 }
 
 /* 취소 아래 한 줄: 버튼과 한 덩어리로 보이게 붙인다. */
@@ -44,8 +118,31 @@
   color: var(--accent);
 }
 
-.mealai-note {
+/* 알아보지 못했을 때의 안내 */
+.mealai-empty {
   font-size: 0.9375rem;
+  text-wrap: pretty;
+}
+
+/* AI가 덧붙인 말: 본문이 아니라 쪽지처럼, 옅은 바탕 위에 AI 표시와 함께 둔다. */
+.mealai-note {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-size: 0.875rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.mealai-note .ai-tag {
+  margin-right: 8px;
+  height: 18px;
+  padding: 0 6px;
+  vertical-align: 1px;
+}
+
+.mealai .ai-disclaimer {
+  margin-top: -4px;
 }
 
 /* 음식 줄: 시트 바탕 위에 가는 선으로만 나눈다. */
@@ -54,18 +151,18 @@
 }
 
 .list.mealai-items > li {
-  padding: 2px 0;
+  padding: 0;
   gap: 12px;
 }
 
 .mealai-item-main {
   flex: 1 1 0;
   min-width: 0;
-  min-height: 56px;
-  padding: 6px 0;
+  min-height: 64px;
+  padding: 10px 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   cursor: pointer;
 }
 
@@ -82,6 +179,9 @@
   border-radius: 6px;
   background: var(--surface);
   cursor: pointer;
+  transition:
+    background-color var(--dur-1) ease,
+    border-color var(--dur-1) ease;
 }
 
 .mealai-item-main input:checked {
@@ -120,6 +220,10 @@
   text-wrap: balance;
 }
 
+.mealai-item-meta .small {
+  font-variant-numeric: tabular-nums;
+}
+
 .mealai-item-meta {
   display: flex;
   flex-wrap: wrap;
@@ -127,23 +231,51 @@
   gap: 2px 6px;
 }
 
-.chip.mealai-chip {
-  min-height: 22px;
-  padding: 0 8px;
+/* 덜 확실한 줄: 반만 찬 동그라미와 조용한 글자. 경고처럼 보이지 않게 한다. */
+.mealai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
+.mealai-chip::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-2);
+  background: linear-gradient(to top, var(--text-2) 50%, transparent 50%);
+}
+
+/* 칼로리 칸: 단위를 칸 안에 넣어 숫자의 오른쪽 끝이 줄마다 맞게 한다. */
 .mealai-kcal {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  position: relative;
 }
 
 .input.mealai-kcal-input {
-  width: 68px;
-  padding: 0 10px;
+  width: 100px;
+  min-height: 44px;
+  padding: 0 42px 0 8px;
+  border-radius: var(--radius-xs);
   text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mealai-kcal-unit {
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-2);
+  pointer-events: none;
 }
 
 .input.mealai-kcal-input[aria-invalid='true'] {
@@ -179,7 +311,9 @@
   background: var(--bg);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  /* 아래의 '다시 적기'가 기록 버튼과 한 덩어리로 보이게 당긴다. */
+  margin-bottom: -20px;
 }
 
 .mealai-total {
@@ -189,12 +323,22 @@
   gap: 12px;
 }
 
+.mealai-total > .muted {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
 .mealai-total-kcal {
   font-family: var(--font-display);
   font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
+}
+
+.mealai-total-kcal .unit {
+  color: var(--text-2);
+  opacity: 1;
 }
 
 /* 저장하지 못했다는 안내는 버튼 바로 위에 둔다. 목록이 길어도 보인다. */

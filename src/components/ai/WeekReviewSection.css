@@ -4,11 +4,15 @@
   gap: 6px;
 }
 
-.week-review-body,
-.week-review-result {
+.week-review-body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.week-review-body > .small {
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
 /* 기다리는 말만 들어오는, 늘 그려 두는 자리. 비어 있을 때는 위아래 간격이 두 번 들어가지 않게 당긴다. */
@@ -20,15 +24,32 @@
   align-self: flex-start;
 }
 
-/* 버튼이 있던 자리에 같은 높이로 놓아, 기다리는 동안 아래 구획이 움직이지 않게 한다. */
 .week-review-wait {
-  min-height: 46px;
+  font-size: 0.9375rem;
+}
+
+/* ── 받은 글: 짧은 기사처럼 짠다 ── */
+/* 이 화면의 일은 아래의 선택이다. 상자나 바탕색 없이 글의 크기와 굵기만으로 위계를 만든다. */
+
+.week-review-result {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: week-review-in var(--dur-3) var(--ease-out) both;
+}
+
+@keyframes week-review-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
 .week-review-headline {
-  font-size: 1.1875rem;
+  font-size: 1.25rem;
   font-weight: 700;
   line-height: 1.4;
+  letter-spacing: -0.02em;
   text-wrap: balance;
 }
 
@@ -41,40 +62,141 @@
 .week-review-sub {
   font-size: 0.8125rem;
   font-weight: 700;
-  color: var(--text-2);
-  margin-bottom: 4px;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  margin-bottom: 8px;
 }
 
-/* 이 화면의 일은 아래의 선택이다. 돌아보기 글은 한 단계 낮춰 적는다. */
 .week-review-list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   font-size: 0.9375rem;
+  line-height: 1.6;
   color: var(--text-2);
 }
 
 .week-review-list > li {
   position: relative;
-  padding-left: 14px;
+  padding-left: 22px;
+  text-wrap: pretty;
 }
 
 .week-review-list > li::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 0.7em;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--text-2);
 }
 
-/* 아래 선택지 카드와 헷갈리지 않게 상자 대신 왼쪽 선으로만 구분한다. */
+/* 잘된 점은 체크 표시, 눈에 띄는 점은 짧은 줄. 색이 아니라 모양으로 두 목록을 가른다. */
+.week-review-group--wins .week-review-list > li::before {
+  left: 4px;
+  top: calc(0.8em - 6px);
+  width: 5px;
+  height: 9px;
+  border: solid var(--accent);
+  border-width: 0 1.75px 1.75px 0;
+  transform: rotate(45deg);
+}
+
+.week-review-group--obs .week-review-list > li::before {
+  left: 2px;
+  top: calc(0.8em - 1px);
+  width: 9px;
+  height: 1.75px;
+  border-radius: 1px;
+  background: var(--text-2);
+  opacity: 0.7;
+}
+
+/* 가져갈 한 가지. 아래 선택지 카드와 헷갈리지 않게 상자 대신 왼쪽 선과 한 단계 큰 글로 구분한다. */
 .week-review-next {
-  padding-left: 12px;
+  padding: 2px 0 2px 16px;
   border-left: 2px solid var(--accent);
+}
+
+.week-review-next .week-review-sub {
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.week-review-next > p {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.week-review .ai-disclaimer {
+  font-size: 0.75rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* ── 기다리는 동안: 받을 글과 같은 모양 ── */
+
+.week-review-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.week-review-skeleton .skeleton {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+}
+
+.week-review-sk-head {
+  height: 20px;
+}
+
+.week-review-skeleton .week-review-sk-label {
+  width: 56px;
+  height: 12px;
+  margin-top: 12px;
+}
+
+.week-review-sk-line {
+  height: 14px;
+}
+
+.week-review-skeleton .week-review-sk--w90 {
+  width: 90%;
+}
+
+.week-review-skeleton .week-review-sk--w85 {
+  width: 85%;
+}
+
+.week-review-skeleton .week-review-sk--w70 {
+  width: 70%;
+}
+
+.week-review-skeleton .week-review-sk--w60 {
+  width: 60%;
+}
+
+.week-review-skeleton .week-review-sk--w45 {
+  width: 45%;
+}
+
+.week-review-sk-next {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  padding-left: 16px;
+  border-left: 2px solid var(--border);
+}
+
+.week-review-skeleton .week-review-sk-next .week-review-sk-label {
+  width: 104px;
+  margin-top: 0;
 }

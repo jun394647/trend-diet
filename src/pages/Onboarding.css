@@ -9,25 +9,67 @@
 .ob-header {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding-top: 8px;
+  gap: 24px;
+  padding-top: 4px;
+}
+
+/* ── 진행 표시: 가는 마디 다섯 개와 작은 숫자 ── */
+
+.ob-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 20px;
 }
 
 .ob-progress {
+  flex: 1 1 auto;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  gap: 6px;
+  gap: 4px;
 }
 
 .ob-dot {
+  position: relative;
   height: 4px;
   border-radius: 2px;
   background: var(--border);
+  overflow: hidden;
 }
 
-.ob-dot--on {
+/* 지나온 마디는 왼쪽에서부터 채워진다. */
+.ob-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
   background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--dur-3) var(--ease-out);
+}
+
+.ob-dot--on::after {
+  transform: scaleX(1);
+}
+
+.ob-count {
+  flex: 0 0 auto;
+  min-width: 26px;
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 20px;
+  color: var(--text-2);
+}
+
+.ob-count > b {
+  font-weight: 700;
+  color: var(--text);
 }
 
 .ob-title {
@@ -38,28 +80,165 @@
   flex: 1;
 }
 
-.ob-lead {
-  font-size: 1.125rem;
-  font-weight: 600;
-  line-height: 1.6;
+/* 단계가 바뀌면 내용이 살짝 떠오르며 나타난다. */
+.ob-step,
+.ob-result {
+  animation: ob-in var(--dur-2) var(--ease-out) both;
+}
+
+@keyframes ob-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
 .ob-desc {
-  margin-bottom: 18px;
+  margin-bottom: 24px;
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
 .ob .banner {
   display: block;
 }
 
+/* ── 첫 화면 ── */
+
+/* 앱 이름은 작은 이름표로 두고, 그 아래 한 문장을 제목으로 세운다. */
+.page-title.ob-title--brand {
+  font-size: 0.9375rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 20px;
+  color: var(--accent);
+}
+
+.ob-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  /* 이름표와 제목은 한 덩어리로 붙인다. */
+  margin-top: -12px;
+}
+
+.ob-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ob-lead-main {
+  font-size: clamp(1.625rem, 8vw, 1.875rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.ob-lead-sub {
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ob-sketch {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.ob-sketch-grid > line {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+}
+
+.ob-sketch-days > circle {
+  fill: var(--text-2);
+  opacity: 0.32;
+}
+
+.ob-sketch-trend {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  animation: ob-draw calc(var(--dur-3) * 2) var(--ease-in-out) both;
+}
+
+@keyframes ob-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+.ob-sketch-now {
+  fill: var(--mark);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+.ob-sketch-now-ring {
+  fill: var(--mark-soft);
+}
+
+.ob-sketch-now,
+.ob-sketch-now-ring {
+  animation: ob-now var(--dur-2) var(--ease-out) calc(var(--dur-3) * 2 - 80ms) both;
+}
+
+@keyframes ob-now {
+  from {
+    opacity: 0;
+  }
+}
+
+.ob-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.ob-notes > p {
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.ob-notes > p:first-child {
+  font-weight: 600;
+}
+
+/* 로그인은 곁길이라 글자만 둔다. 내용이 짧으면 아래 버튼 바로 위로 내려간다. */
+.btn.ob-login-open {
+  margin-top: auto;
+  min-height: 48px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.ob-signed {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.ob-login {
+  animation: ob-in var(--dur-2) var(--ease-out) both;
+}
+
 /* ── 결과: 계획 패널 ── */
 
 .stack.ob-result {
-  gap: 20px;
+  gap: 24px;
 }
 
 .ob-plan .card-title {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 /* 범위는 숫자가 두 개라 좁은 화면에서도 한 줄에 들어가게 조금 줄인다. */
@@ -74,10 +253,12 @@
 .ob-plan-msg {
   margin-top: 12px;
   font-size: 0.9375rem;
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
 .ob-facts {
-  margin: 18px 0 0;
+  margin: 20px 0 0;
 }
 
 .ob-facts > div {
@@ -86,7 +267,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 2px 12px;
-  padding: 10px 0;
+  padding: 12px 0;
   border-top: 1px solid var(--panel-line);
 }
 
@@ -104,37 +285,70 @@
   font-weight: 700;
 }
 
-/* ── 결과: 계획이 굴러가는 방식 ── */
+/* 단위는 숫자보다 조용하게 */
+.ob-fact-unit {
+  margin-left: 2px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--panel-text-2);
+}
+
+/* ── 결과: 계획이 굴러가는 방식. 번호를 왼쪽에 내어 쓴 짧은 목록 ── */
 
 .ob-how {
   list-style: none;
-  margin: 0;
+  margin: 4px 0 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  counter-reset: ob-how;
 }
 
 .ob-how > li {
-  padding: 10px 0;
-  border-top: 1px solid var(--border);
+  counter-increment: ob-how;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: baseline;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
-.ob-how > li:first-child {
-  padding-top: 0;
-  border-top: 0;
+.ob-how > li::before {
+  content: counter(ob-how);
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--accent);
 }
 
-.ob-how > li:last-child {
-  padding-bottom: 0;
+.ob-disclaimer {
+  line-height: 1.6;
+  padding-bottom: 8px;
+  text-wrap: pretty;
 }
+
+/* ── 아래 붙박이 버튼 줄 ── */
 
 .ob-actions {
   position: sticky;
   bottom: 0;
+  z-index: 2;
   display: flex;
-  gap: 10px;
-  margin: 0 calc(var(--gutter) * -1);
-  padding: 12px var(--gutter) calc(env(safe-area-inset-bottom) + 12px);
+  gap: 8px;
+  margin: 0 calc(max(var(--gutter), env(safe-area-inset-right)) * -1) 0
+    calc(max(var(--gutter), env(safe-area-inset-left)) * -1);
+  padding: 12px max(var(--gutter), env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 16px)
+    max(var(--gutter), env(safe-area-inset-left));
   background: var(--bg);
   border-top: 1px solid var(--border);
+}
+
+.ob-actions > .btn:not(.ob-next) {
+  flex: 0 0 auto;
+  min-width: 80px;
 }
 
 .ob-next {

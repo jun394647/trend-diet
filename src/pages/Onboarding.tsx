@@ -118,49 +118,62 @@ export default function Onboarding() {
   return (
     <main className="page page--no-tabbar ob">
       <header className="ob-header">
-        <div
-          className="ob-progress"
-          role="progressbar"
-          aria-label="설정 진행 단계"
-          aria-valuemin={1}
-          aria-valuemax={STEPS.length}
-          aria-valuenow={stepIndex + 1}
-          aria-valuetext={`${STEPS.length}단계 중 ${stepIndex + 1}단계`}
-        >
-          {STEPS.map((s, i) => (
-            <span key={s} className={i <= stepIndex ? 'ob-dot ob-dot--on' : 'ob-dot'} />
-          ))}
+        <div className="ob-top">
+          <div
+            className="ob-progress"
+            role="progressbar"
+            aria-label="설정 진행 단계"
+            aria-valuemin={1}
+            aria-valuemax={STEPS.length}
+            aria-valuenow={stepIndex + 1}
+            aria-valuetext={`${STEPS.length}단계 중 ${stepIndex + 1}단계`}
+          >
+            {STEPS.map((s, i) => (
+              <span key={s} className={i <= stepIndex ? 'ob-dot ob-dot--on' : 'ob-dot'} />
+            ))}
+          </div>
+          {/* 눈으로 보는 단계 숫자. 화면 낭독기에는 위의 진행 표시가 같은 내용을 알려 준다. */}
+          <span className="ob-count" aria-hidden="true">
+            <b>{stepIndex + 1}</b>/{STEPS.length}
+          </span>
         </div>
-        <h1 className="page-title ob-title" ref={titleRef} tabIndex={-1}>
+        <h1
+          className={step === 'welcome' ? 'page-title ob-title ob-title--brand' : 'page-title ob-title'}
+          ref={titleRef}
+          tabIndex={-1}
+        >
           {TITLES[step]}
         </h1>
       </header>
 
       {step === 'welcome' && (
-        <section className="stack ob-body">
+        <section className="ob-body ob-welcome">
           <p className="ob-lead">
-            하루하루를 따지지 않고 한 주 평균으로 봐요. 그리고 내 몸이 실제로 반응하는 만큼 계획을
-            맞춰 가요.
+            <span className="ob-lead-main">하루하루를 따지지 않고 한 주 평균으로 봐요.</span>{' '}
+            <span className="ob-lead-sub">그리고 내 몸이 실제로 반응하는 만큼 계획을 맞춰 가요.</span>
           </p>
-          {syncEnabled ? (
-            <p className="banner">
-              기록은 이 기기에 저장돼요. 로그인하면 계정에도 저장돼서 다른 기기에서 이어 쓸 수 있어요.
-            </p>
-          ) : (
-            <p className="banner">기록은 이 기기에만 저장돼요. 가입이나 로그인은 필요 없어요.</p>
-          )}
-          <p className="muted small">시작하기 전에 몇 가지만 여쭤볼게요. 1분이면 끝나요.</p>
+          <TrendSketch />
+          <div className="ob-notes">
+            <p>시작하기 전에 몇 가지만 여쭤볼게요. 1분이면 끝나요.</p>
+            {syncEnabled ? (
+              <p className="muted small">
+                기록은 이 기기에 저장돼요. 로그인하면 계정에도 저장돼서 다른 기기에서 이어 쓸 수 있어요.
+              </p>
+            ) : (
+              <p className="muted small">기록은 이 기기에만 저장돼요. 가입이나 로그인은 필요 없어요.</p>
+            )}
+          </div>
           {syncEnabled &&
             (syncEmail && !syncConflict ? (
-              <p className="small muted" role="status">
+              <p className="small muted ob-signed" role="status">
                 {syncEmail}(으)로 로그인했어요. 이 계정에는 아직 기록이 없으니 이어서 진행해 주세요.
               </p>
             ) : showLogin || syncConflict ? (
-              <div className="well">
+              <div className="well ob-login">
                 <AccountAuth />
               </div>
             ) : (
-              <button type="button" className="btn btn--block" onClick={() => setShowLogin(true)}>
+              <button type="button" className="btn btn--ghost btn--block ob-login-open" onClick={() => setShowLogin(true)}>
                 쓰던 계정으로 로그인하기
               </button>
             ))}
@@ -168,7 +181,7 @@ export default function Onboarding() {
       )}
 
       {section && (
-        <section className="ob-body">
+        <section className="ob-body ob-step" key={step}>
           {step === 'body' && (
             <p className="muted ob-desc">하루에 쓰는 칼로리를 어림하는 데 사용해요.</p>
           )}
@@ -228,6 +241,34 @@ export default function Onboarding() {
   )
 }
 
+/**
+ * 첫 화면의 그림. 들쭉날쭉한 하루하루의 점 사이로 추세선이 지나가고, 끝에 '지금'을 꿀색 점으로 찍는다.
+ * 꾸밈이라 화면 낭독기에는 알리지 않는다.
+ */
+function TrendSketch() {
+  const days: [number, number][] = [
+    [8, 30], [30, 18], [52, 40], [74, 26], [96, 46], [118, 30], [140, 54], [162, 40],
+    [184, 62], [206, 44], [228, 68], [250, 58], [272, 78], [294, 66],
+  ]
+  return (
+    <svg className="ob-sketch" viewBox="0 0 320 104" aria-hidden="true" focusable="false">
+      <g className="ob-sketch-grid">
+        <line x1="0" y1="24" x2="320" y2="24" />
+        <line x1="0" y1="52" x2="320" y2="52" />
+        <line x1="0" y1="80" x2="320" y2="80" />
+      </g>
+      <g className="ob-sketch-days">
+        {days.map(([x, y]) => (
+          <circle key={x} cx={x} cy={y} r="3" />
+        ))}
+      </g>
+      <path className="ob-sketch-trend" pathLength={1} d="M8 28 C 70 30, 110 40, 160 48 S 260 66, 308 74" />
+      <circle className="ob-sketch-now-ring" cx="308" cy="74" r="11" />
+      <circle className="ob-sketch-now" cx="308" cy="74" r="5.5" />
+    </svg>
+  )
+}
+
 function Result({ draft, date, valid }: { draft: ProfileDraft; date: string; valid: boolean }) {
   if (!valid) {
     return (
@@ -284,7 +325,8 @@ function Result({ draft, date, valid }: { draft: ProfileDraft; date: string; val
           <div>
             <dt>예상 하루 소비 칼로리</dt>
             <dd className="num" data-testid="tdee-kcal">
-              {kcal(checkin.estimatedTdee)}kcal
+              {kcal(checkin.estimatedTdee)}
+              <span className="ob-fact-unit">kcal</span>
             </dd>
           </div>
           {goalDate && (
@@ -321,7 +363,7 @@ function Result({ draft, date, valid }: { draft: ProfileDraft; date: string; val
         </ul>
       </div>
 
-      <p className="muted small">
+      <p className="muted small ob-disclaimer">
         키, 체중, 나이, 활동량으로 계산한 추정치이며 의학적 조언이 아니에요. 건강에 걱정되는 점이
         있으면 전문가와 상담해 주세요.
       </p>

@@ -7,6 +7,10 @@ import { callAiOnce, errorToKeep } from './CoachCall'
 export interface CoachMessage {
   id: number
   role: 'user' | 'assistant'
+  /**
+   * 한 말. 코치의 답은 쓰이는 대로 조금씩 채워진다: pending인 동안 마지막 메시지가 코치의 것이면
+   * 그 text는 지금까지 쓰인 데까지이고(마지막 문장이 끊겨 있을 수 있다), pending이 풀리면 완성된 답이다.
+   */
   text: string
 }
 
@@ -17,7 +21,11 @@ interface CoachState {
   messages: CoachMessage[]
   /** 적다 만 질문. 다른 화면에 다녀와도 남아 있다. */
   draft: string
-  /** 답을 기다리는 중인지. 화면을 떠나도 요청은 계속되고, 답이 오면 대화에 들어간다. */
+  /**
+   * 답을 기다리는 중인지. 화면을 떠나도 요청은 계속되고, 답이 오면 대화에 들어간다.
+   * 답의 첫 글자가 오기 전에는 마지막 메시지가 내 질문이고, 오기 시작하면 코치의 메시지가 생겨 text가 자라난다.
+   * 도중에 실패하면 쓰이던 메시지는 사라지고 error가 남는다(마지막 메시지는 다시 내 질문이다).
+   */
   pending: boolean
   /** 마지막 질문이 답을 받지 못한 이유. */
   error: AiError | null
@@ -40,13 +48,31 @@ export const useCoach = create<CoachState>((set, get) => {
   async function ask(context: CoachContext, question: string, prior: CoachMessage[]) {
     const mine = epoch
     set({ pending: true, error: null })
+    /** 쓰이는 중인 답을 담은 메시지의 id. 첫 글자가 올 때 만든다. */
+    let writing: number | null = null
+    const put = (text: string, more: Partial<CoachState> = {}) =>
+      set((s) => {
+        if (writing === null) {
+          writing = nextId++
+          return { ...more, messages: [...s.messages, { id: writing, role: 'assistant', text }] }
+        }
+        return { ...more, messages: s.messages.map((m) => (m.id === writing ? { ...m, text } : m)) }
+      })
     try {
-      const { answer } = await callAiOnce({ task: 'ask', context, question, history: toHistory(prior) })
+      const { answer } = await callAiOnce({ task: 'ask', context, question, history: toHistory(prior) }, (partial) => {
+        if (mine !== epoch || !get().pending || !partial.answer.trim()) return
+        put(partial.answer)
+      })
       if (mine !== epoch) return
-      set((s) => ({ pending: false, messages: [...s.messages, { id: nextId++, role: 'assistant', text: answer }] }))
+      put(answer, { pending: false })
     } catch (e) {
       if (mine !== epoch) return
-      set({ pending: false, error: errorToKeep(e as AiError) })
+      // 쓰이다 만 답은 남기지 않는다. 마지막이 다시 내 질문이 되어, 실패 안내와 '다시 시도'가 그 아래에 나온다.
+      set((s) => ({
+        pending: false,
+        error: errorToKeep(e as AiError),
+        messages: writing === null ? s.messages : s.messages.filter((m) => m.id !== writing),
+      }))
     }
   }
 

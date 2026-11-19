@@ -81,16 +81,18 @@ export default function MealAiReview({
 
   return (
     <section className="stack mealai" aria-labelledby="mealai-title">
-      <h3 ref={titleRef} className="mealai-title" id="mealai-title" tabIndex={-1}>
-        {title}
-      </h3>
+      {/* 보낸 뒤에는 사진을 작게 줄여 제목 옆에 둔다. 무엇에 대한 결과인지는 보이되 자리는 결과가 쓴다. */}
+      <div className="mealai-head">
+        {source.kind === 'photo' && stage !== 'idle' && (
+          <img className="mealai-photo mealai-photo--small" src={source.previewUrl} alt="고른 사진" />
+        )}
+        <h3 ref={titleRef} className="mealai-title" id="mealai-title" tabIndex={-1}>
+          {title}
+        </h3>
+      </div>
 
       {source.kind === 'photo' ? (
-        <img
-          className={stage === 'idle' ? 'mealai-photo' : 'mealai-photo mealai-photo--small'}
-          src={source.previewUrl}
-          alt="고른 사진"
-        />
+        stage === 'idle' && <img className="mealai-photo" src={source.previewUrl} alt="고른 사진" />
       ) : (
         <p className="mealai-quote muted">{source.text}</p>
       )}
@@ -133,6 +135,19 @@ export default function MealAiReview({
       {stage === 'loading' && (
         <>
           <AiLoading label={isPhoto ? '사진을 보고 칼로리를 어림잡는 중이에요' : '적은 내용으로 칼로리를 어림잡는 중이에요'} />
+          {/* 결과가 놓일 자리를 미리 잡아 둔다. 답이 와도 화면이 덜 움직인다. */}
+          <div className="mealai-skeleton" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i}>
+                <span className="skeleton mealai-skeleton-check" />
+                <span className="mealai-skeleton-text">
+                  <span className="skeleton" />
+                  <span className="skeleton" />
+                </span>
+                <span className="skeleton mealai-skeleton-kcal" />
+              </div>
+            ))}
+          </div>
           <button type="button" className="btn btn--ghost btn--block" onClick={onCancel}>
             취소
           </button>
@@ -151,7 +166,7 @@ export default function MealAiReview({
 
       {state.status === 'done' && empty && (
         <>
-          <p className="mealai-note">
+          <p className="mealai-empty">
             {isPhoto
               ? '사진에서 음식을 알아보지 못했어요. 다른 사진으로 해 주세요.'
               : '음식을 알아보지 못했어요. 무엇을 얼마나 먹었는지 조금 더 적어 주세요.'}
@@ -265,7 +280,7 @@ function ResultForm({ data, busy, savedIds, saveError, backLabel, onBack, onLog 
                   <span className="mealai-item-name">{r.name}</span>
                   <span className="mealai-item-meta">
                     {r.amount && <span className="small muted">{r.amount}</span>}
-                    {r.low && <span className="chip mealai-chip">덜 확실해요</span>}
+                    {r.low && <span className="mealai-chip">덜 확실해요</span>}
                     {!on && (
                       <span className="small muted">{kcal > 0 ? '기록하지 않아요' : '칼로리를 적으면 기록해요'}</span>
                     )}
@@ -282,7 +297,7 @@ function ResultForm({ data, busy, savedIds, saveError, backLabel, onBack, onLog 
                   value={r.kcalText}
                   onChange={(e) => onKcal(r.id, e.target.value)}
                 />
-                <span className="small muted" aria-hidden="true">
+                <span className="mealai-kcal-unit" aria-hidden="true">
                   kcal
                 </span>
               </span>
@@ -297,7 +312,12 @@ function ResultForm({ data, busy, savedIds, saveError, backLabel, onBack, onLog 
         </p>
       )}
 
-      {note && <p className="mealai-note">{note}</p>}
+      {note && (
+        <p className="mealai-note">
+          <AiTag />
+          {note}
+        </p>
+      )}
       {/* 기록하기 전에 읽히도록 버튼 위에 둔다. */}
       <AiDisclaimer>실제와 다를 수 있어요. 숫자를 눌러 고칠 수 있어요.</AiDisclaimer>
 

@@ -10,9 +10,13 @@ import {
   MealEstimateSchema,
   SuggestionsSchema,
   WeekReviewSchema,
+  isAiStreamTask,
   type AiErrorCode,
+  type AiPartialMap,
   type AiResultMap,
+  type AiStreamTask,
 } from '../../src/ai/contract.ts'
+import { partialResult } from './partial.ts'
 import { buildPrompt, type ModelRequest, type ModelTask } from './prompts.ts'
 
 /** 코치가 먼저 건네는 한마디(서버 전용 task 'nudge')의 응답. */
@@ -27,9 +31,64 @@ export interface ModelResultMap extends AiResultMap {
   nudge: Nudge
 }
 
-/** 쓰는 모델. 바꿀 때는 여기 한 곳만 고친다. */
-export const MODEL = 'claude-opus-5-5'
-export const MAX_TOKENS = 16000
+// ── 모델과 설정 ────────────────────────────────────────────────
+
+/**
+ * 고를 수 있는 모델과, 모델마다 다른 규칙. 여기 없는 이름은 쓰지 않는다(틀린 이름은 API 오류가 된다).
+ *  - thinkingOff: 생각하기를 끄는 thinking 값. null이면 끌 수 없는 모델이다(effort로만 조절한다).
+ *  - serverFallback: 모델이 거절했을 때 서버가 다른 모델로 이어서 처리해 주는지. 없으면 거절은 그대로 refused가 된다.
+ *  - fastMode: speed: 'fast'(같은 모델이 더 빨리 쓴다, 값은 두 배)를 받는지.
+ */
+export const MODEL_RULES = {
+  'claude-opus-5-5': { thinkingOff: null, serverFallback: true, fastMode: true },
+  'claude-sonnet-5-5': { thinkingOff: { type: 'between_tools' }, serverFallback: true, fastMode: false },
+  'claude-haiku-5-5': { thinkingOff: { type: 'disabled' }, serverFallback: false, fastMode: false },
+} as const
+export type ModelId = keyof typeof MODEL_RULES
+export const EFFORTS = ['low', 'medium', 'high'] as const
+export type Effort = (typeof EFFORTS)[number]
+
+export interface TaskConfig {
+  model: ModelId
+  effort: Effort
+  /** 답이 끝없이 길어질 때를 막는 상한. 생각하기에 쓰는 토큰도 여기에 든다. 평소 답의 길이를 조절하는 값이 아니다. */
+  maxTokens: number
+  /** 'off'는 생각하기를 끌 수 있는 모델에서만 통한다. 끌 수 없는 모델에서는 무시한다. */
+  thinking: 'on' | 'off'
+  /** 시스템 프롬프트를 캐시에 올릴지. 몇 분 안에 같은 task를 이어서 부르는 경우에만 이득이다. */
+  cacheSystem: boolean
+  /**
+   * 'fast'는 같은 모델이 글을 더 빨리 쓰게 한다(받는 모델에서만 통하고, 그 호출의 값이 두 배가 된다).
+   * 돈이 더 드는 선택이라 기본값으로는 쓰지 않는다.
+   */
+  speed: 'standard' | 'fast'
+}
+
+/** 기본 모델. task별 기본값은 TASK_DEFAULTS에 있다. */
+export const MODEL: ModelId = 'claude-opus-5-5'
+
+/**
+ * task별 기본 설정. 모델·effort를 바꿀 때는 여기 한 곳만 고친다.
+ *
+ * 지금은 모든 task가 예전과 같은 모델과 effort를 쓴다. 더 빠른 모델(claude-haiku-5-5, claude-sonnet-5-5)이나
+ * 낮은 effort로 바꾸는 것은 scripts/ai-eval 의 비교에서 품질이 그대로일 때만 한다. 비교 결과와 바꾼 이유는
+ * scripts/ai-eval/RESULTS.md 에 적는다. 배포 환경에서는 코드를 고치지 않고 환경변수로 바꿔 볼 수 있다(taskConfig).
+ *
+ * maxTokens는 프로덕션에서 잰 출력(생각하기 포함 93~880토큰)의 몇 배로 잡은 상한이다.
+ */
+export const TASK_DEFAULTS: Record<ModelTask, TaskConfig> = {
+  'meal-text': { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'standard' },
+  'meal-photo': { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'standard' },
+  suggest: { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'standard' },
+  'week-review': { model: MODEL, effort: 'medium', maxTokens: 8000, thinking: 'on', cacheSystem: false, speed: 'standard' },
+  // 코치와는 몇 분 안에 이어서 묻는 일이 많아, 두 번째 질문부터 시스템 프롬프트를 캐시에서 읽는다.
+  ask: { model: MODEL, effort: 'medium', maxTokens: 8000, thinking: 'on', cacheSystem: true, speed: 'standard' },
+  nudge: { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'standard' },
+}
+
+/** task별 기본 effort. */
+export const EFFORT = Object.fromEntries(Object.entries(TASK_DEFAULTS).map(([task, c]) => [task, c.effort])) as Record<ModelTask, Effort>
+
 /** 모델이 답을 거절하면 서버가 다른 모델로 같은 요청을 이어서 처리하게 한다. */
 export const FALLBACK_BETA = 'server-side-fallback-2026-07-01'
 
@@ -37,13 +96,34 @@ export const FALLBACK_BETA = 'server-side-fallback-2026-07-01'
 export const ATTEMPT_TIMEOUT_MS = 40_000
 export const TOTAL_TIMEOUT_MS = 50_000
 
-export const EFFORT: Record<ModelTask, 'low' | 'medium'> = {
-  'meal-text': 'low',
-  'meal-photo': 'low',
-  suggest: 'low',
-  'week-review': 'medium',
-  ask: 'medium',
-  nudge: 'low',
+const isModelId = (v: string): v is ModelId => Object.hasOwn(MODEL_RULES, v)
+const isEffort = (v: string): v is Effort => (EFFORTS as readonly string[]).includes(v)
+
+/** 'meal-text' → 'MEAL_TEXT'. 환경변수 이름의 뒷부분이다. */
+export const envSuffix = (task: ModelTask): string => task.toUpperCase().replaceAll('-', '_')
+
+/**
+ * 이 task에 실제로 쓸 설정. 환경변수가 있으면 기본값 대신 그 값을 쓴다.
+ *   AI_MODEL_<TASK>     예: AI_MODEL_MEAL_TEXT=claude-haiku-5-5
+ *   AI_EFFORT_<TASK>    low | medium | high
+ *   AI_THINKING_<TASK>  on | off
+ *   AI_SPEED_<TASK>     standard | fast
+ * 모르는 값은 무시하고 기본값을 쓴다. 실제로 쓴 모델과 effort는 호출 로그에 남는다.
+ */
+export function taskConfig(task: ModelTask, env: Record<string, string | undefined> = process.env): TaskConfig {
+  const base = TASK_DEFAULTS[task]
+  const suffix = envSuffix(task)
+  const model = (env[`AI_MODEL_${suffix}`] ?? '').trim()
+  const effort = (env[`AI_EFFORT_${suffix}`] ?? '').trim().toLowerCase()
+  const thinking = (env[`AI_THINKING_${suffix}`] ?? '').trim().toLowerCase()
+  const speed = (env[`AI_SPEED_${suffix}`] ?? '').trim().toLowerCase()
+  return {
+    ...base,
+    model: isModelId(model) ? model : base.model,
+    effort: isEffort(effort) ? effort : base.effort,
+    thinking: thinking === 'on' || thinking === 'off' ? thinking : base.thinking,
+    speed: speed === 'standard' || speed === 'fast' ? speed : base.speed,
+  }
 }
 
 const SCHEMAS = {
@@ -55,12 +135,29 @@ const SCHEMAS = {
   nudge: NudgeSchema,
 } as const
 
+/** 쓰이는 중인 결과를 받는 함수. 매번 처음부터 지금까지의 전체가 온다. */
+export type OnPartial = (partial: AiPartialMap[AiStreamTask]) => void
+
 export interface CallModelArgs {
   request: ModelRequest
   userId: string
+  /**
+   * 주면, 조금씩 받을 수 있는 task(ask, week-review)는 쓰이는 대로 이 함수로 알려 준다.
+   * 돌려주는 최종 결과는 주지 않았을 때와 같다. 실패로 끝나면 그동안 알려 준 것은 버려야 한다.
+   */
+  onPartial?: OnPartial
+  /** 기다리던 쪽이 떠났을 때 호출을 그만두게 한다. */
+  signal?: AbortSignal
 }
 export type ModelOutcome = { ok: true; result: ModelResultMap[ModelTask] } | { ok: false; error: AiErrorCode }
 export type CallModel = (args: CallModelArgs) => Promise<ModelOutcome>
+
+interface UsageLike {
+  input_tokens?: number | null
+  output_tokens?: number | null
+  cache_read_input_tokens?: number | null
+  cache_creation_input_tokens?: number | null
+}
 
 /** 테스트에서 가짜로 바꿔 끼우는 부분. 실제로는 client.beta.messages.parse다. */
 type BetaMessages = Anthropic['beta']['messages']
@@ -69,22 +166,63 @@ export interface ParsedLike {
   stop_reason: string | null
   parsed_output: unknown
   model?: string
-  usage?: { input_tokens?: number | null; output_tokens?: number | null } | null
+  usage?: UsageLike | null
 }
 export type ParseFn = (params: ParseParams, options: { signal: AbortSignal }) => Promise<ParsedLike>
 
-export function buildParams(request: ModelRequest): ParseParams {
+/** 조금씩 받는 쪽. 실제로는 client.beta.messages.stream이다. */
+export type StreamParams = Parameters<BetaMessages['stream']>[0]
+export interface StreamEventLike {
+  type: string
+  delta?: unknown
+}
+export interface StreamedLike {
+  stop_reason: string | null
+  model?: string
+  usage?: UsageLike | null
+  content: readonly { type: string; text?: string }[]
+}
+export interface StreamLike extends AsyncIterable<StreamEventLike> {
+  finalMessage(): Promise<StreamedLike>
+}
+export type StreamFn = (params: StreamParams, options: { signal: AbortSignal }) => StreamLike
+
+function requestBody(request: ModelRequest, config: TaskConfig) {
   const { system, messages } = buildPrompt(request)
+  const rules = MODEL_RULES[config.model]
   return {
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    // 이 모델은 생각하기가 늘 켜져 있다. thinking은 보내지 않고 깊이는 effort로만 조절한다.
-    output_config: { effort: EFFORT[request.task], format: betaZodOutputFormat(SCHEMAS[request.task]) },
-    betas: [FALLBACK_BETA],
-    fallbacks: 'default',
-    system,
+    model: config.model,
+    max_tokens: config.maxTokens,
+    output_config: { effort: config.effort, format: betaZodOutputFormat(SCHEMAS[request.task]) },
+    // thinking은 끌 때만 보낸다. 보내지 않으면 세 모델 모두 필요한 만큼 생각하고, 깊이는 effort로 조절한다.
+    ...(config.thinking === 'off' && rules.thinkingOff ? { thinking: rules.thinkingOff } : {}),
+    ...(rules.serverFallback ? { betas: [FALLBACK_BETA], fallbacks: 'default' as const } : {}),
+    ...(config.speed === 'fast' && rules.fastMode ? { speed: 'fast' as const } : {}),
+    system: config.cacheSystem ? [{ type: 'text' as const, text: system, cache_control: { type: 'ephemeral' as const } }] : system,
     messages,
   }
+}
+
+export function buildParams(request: ModelRequest, config: TaskConfig = taskConfig(request.task)): ParseParams {
+  return requestBody(request, config)
+}
+
+/**
+ * 조금씩 받을 때 보내는 요청. 모델이 읽는 내용은 buildParams와 같다.
+ * SDK가 응답을 스스로 해석하지 않게 형식에서 parse만 뺀다. 서버가 도중에 다른 모델로 넘기면 글이 여러 블록으로
+ * 나뉘어 오는데, SDK는 첫 블록만 해석하려 들기 때문이다. 해석은 블록을 이어 붙여 여기서 한다.
+ */
+export function buildStreamParams(request: ModelRequest, config: TaskConfig = taskConfig(request.task)): StreamParams {
+  const body = requestBody(request, config)
+  const { type, schema } = body.output_config.format
+  return { ...body, output_config: { effort: body.output_config.effort, format: { type, schema } } }
+}
+
+/** 스트림 안에서 온 오류 사건의 종류. 예: 'overloaded_error'. */
+function streamErrorType(e: InstanceType<typeof Anthropic.APIError>): string | null {
+  const body = e.error as { error?: { type?: unknown } } | undefined
+  const type = body?.error?.type
+  return typeof type === 'string' ? type : null
 }
 
 /** SDK 오류를 계약의 실패 사유로 바꾼다. 구체적인 것부터 본다. */
@@ -96,6 +234,12 @@ export function mapSdkError(e: unknown): AiErrorCode {
   if (e instanceof Anthropic.APIConnectionError || e instanceof Anthropic.APIUserAbortError) return 'busy'
   if (e instanceof Anthropic.InternalServerError) return 'busy'
   if (e instanceof Anthropic.APIError && typeof e.status === 'number' && (e.status >= 500 || e.status === 408)) return 'busy'
+  // 조금씩 받는 도중에 온 오류에는 상태 코드가 없고 종류(type)만 있다.
+  if (e instanceof Anthropic.APIError && e.status === undefined) {
+    const type = streamErrorType(e)
+    if (type === 'overloaded_error' || type === 'api_error' || type === 'timeout_error' || type === 'rate_limit_error') return 'busy'
+    if (type === 'authentication_error' || type === 'permission_error') return 'not_configured'
+  }
   // 전체 시간 제한(AbortSignal.timeout)에 걸린 경우.
   if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) return 'busy'
   return 'failed'
@@ -135,21 +279,82 @@ export function tidyResult(task: ModelTask, parsed: unknown): ModelResultMap[Mod
   }
 }
 
-/** parse 함수를 받아 callModel을 만든다. 사용자의 글, 사진, 키는 로그에 남기지 않는다. */
-export function createCallModel(parse: ParseFn): CallModel {
-  return async ({ request, userId }) => {
+const textDelta = (event: StreamEventLike): string | null => {
+  if (event.type !== 'content_block_delta') return null
+  const delta = event.delta as { type?: unknown; text?: unknown } | null | undefined
+  return delta && delta.type === 'text_delta' && typeof delta.text === 'string' ? delta.text : null
+}
+
+/** 조금씩 받으며 쓰이는 대로 알리고, 끝나면 parse와 같은 모양으로 돌려준다. */
+async function streamOnce(
+  stream: StreamFn,
+  request: ModelRequest & { task: AiStreamTask },
+  config: TaskConfig,
+  signal: AbortSignal,
+  onPartial: OnPartial,
+  mark: (what: 'firstEvent' | 'firstText') => void,
+): Promise<ParsedLike> {
+  const s = stream(buildStreamParams(request, config), { signal })
+  let soFar = ''
+  let shown = ''
+  for await (const event of s) {
+    mark('firstEvent')
+    const piece = textDelta(event)
+    if (piece === null) continue
+    soFar += piece
+    const partial = partialResult(request.task, soFar)
+    if (!partial) continue
+    const key = JSON.stringify(partial)
+    if (key === shown) continue
+    shown = key
+    mark('firstText')
+    onPartial(partial)
+  }
+  const message = await s.finalMessage()
+  // 글 블록을 모두 이어 붙인 것이 응답이다(도중에 다른 모델로 넘어갔으면 블록이 둘 이상이다).
+  const whole = message.content.map((b) => (b.type === 'text' && typeof b.text === 'string' ? b.text : '')).join('')
+  let parsed_output: unknown = null
+  try {
+    parsed_output = JSON.parse(whole || soFar)
+  } catch {
+    parsed_output = null
+  }
+  return { stop_reason: message.stop_reason, parsed_output, model: message.model, usage: message.usage }
+}
+
+/**
+ * parse 함수(와 stream 함수)를 받아 callModel을 만든다. 사용자의 글, 사진, 키는 로그에 남기지 않는다.
+ * stream 함수가 없거나 onPartial을 주지 않으면 언제나 한 덩어리로 받는다.
+ */
+export function createCallModel(parse: ParseFn, stream?: StreamFn, env: Record<string, string | undefined> = process.env): CallModel {
+  return async ({ request, userId, onPartial, signal: outer }) => {
     const task = request.task
+    const config = taskConfig(task, env)
     const started = Date.now()
-    const base = { evt: 'ai', task, user: userId, model: MODEL }
+    const streamed = Boolean(stream && onPartial && isAiStreamTask(task))
+    const base = { evt: 'ai', task, user: userId, model: config.model, effort: config.effort, ...(config.speed === 'fast' ? { speed: 'fast' } : {}), streamed }
+    const marks: { firstEvent?: number; firstText?: number } = {}
+    const mark = (what: 'firstEvent' | 'firstText'): void => {
+      marks[what] ??= Date.now() - started
+    }
     try {
-      const message = await parse(buildParams(request), { signal: AbortSignal.timeout(TOTAL_TIMEOUT_MS) })
+      const timeout = AbortSignal.timeout(TOTAL_TIMEOUT_MS)
+      const signal = outer ? AbortSignal.any([timeout, outer]) : timeout
+      const message =
+        stream && onPartial && isAiStreamTask(task)
+          ? await streamOnce(stream, request as ModelRequest & { task: AiStreamTask }, config, signal, onPartial, mark)
+          : await parse(buildParams(request, config), { signal })
       const log = {
         ...base,
         ms: Date.now() - started,
-        servedBy: message.model ?? MODEL,
+        // 조금씩 받았을 때: 첫 조각이 온 시간과, 화면에 보일 첫 글자가 나온 시간.
+        ...(streamed ? { firstEventMs: marks.firstEvent ?? null, firstTextMs: marks.firstText ?? null } : {}),
+        servedBy: message.model ?? config.model,
         stop: message.stop_reason,
         in: message.usage?.input_tokens ?? null,
         out: message.usage?.output_tokens ?? null,
+        cacheRead: message.usage?.cache_read_input_tokens ?? null,
+        cacheWrite: message.usage?.cache_creation_input_tokens ?? null,
       }
       // 내용을 믿기 전에 stop_reason부터 본다.
       if (message.stop_reason === 'refusal') {
@@ -186,13 +391,16 @@ export function createCallModel(parse: ParseFn): CallModel {
 
 let cached: CallModel | undefined
 
-/** 실제 SDK로 부르는 callModel. 클라이언트는 콜드 스타트마다 한 번만 만든다. */
+/** 실제 SDK로 부르는 callModel. 클라이언트는 함수 인스턴스마다 한 번만 만들어 호출 사이에 연결을 다시 쓴다. */
 export function anthropicCallModel(): CallModel {
   return (args) => {
     if (!cached) {
       // ANTHROPIC_API_KEY는 SDK가 환경변수에서 읽는다.
       const client = new Anthropic({ maxRetries: 1, timeout: ATTEMPT_TIMEOUT_MS })
-      cached = createCallModel((params, options) => client.beta.messages.parse(params, options))
+      cached = createCallModel(
+        (params, options) => client.beta.messages.parse(params, options),
+        (params, options) => client.beta.messages.stream(params, options),
+      )
     }
     return cached(args)
   }

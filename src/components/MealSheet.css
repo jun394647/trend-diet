@@ -72,9 +72,13 @@
   background: transparent;
   flex: 1 1 0;
   min-width: 0;
-  min-height: 54px;
+  min-height: 52px;
   padding: 6px 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
+  color: var(--text);
+  transition:
+    background-color var(--dur-1) ease,
+    box-shadow var(--dur-1) ease;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -90,6 +94,7 @@
 
 .fav-log:active:not(:disabled) {
   background: var(--surface-2);
+  box-shadow: 0 0 0 6px var(--surface-2);
 }
 
 .fav-log:disabled {
@@ -104,8 +109,18 @@
 
 .fav-kcal {
   flex: 0 0 auto;
-  color: var(--text-2);
+  font-weight: 600;
   white-space: nowrap;
+}
+
+.fav-unit {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.fav-list > li > .icon-btn {
+  margin-right: -12px;
 }
 
 .fav-confirm {
@@ -141,14 +156,18 @@
   background: var(--surface);
   color: var(--text);
   border-radius: var(--radius-sm);
-  min-height: 96px;
+  min-height: 76px;
   padding: 12px 4px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 2px;
   cursor: pointer;
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) ease,
+    border-color var(--dur-1) ease;
 }
 
 .rough-btn:focus-visible {
@@ -157,6 +176,7 @@
 }
 
 .rough-btn:active:not(:disabled) {
+  transform: scale(0.97);
   background: var(--accent-soft);
   border-color: var(--accent);
 }
@@ -167,19 +187,73 @@
 }
 
 .rough-label {
-  font-size: 1.125rem;
+  font-size: 1rem;
   font-weight: 700;
+  line-height: 1.4;
 }
 
 .rough-kcal {
   font-size: 0.875rem;
+  font-weight: 600;
   color: var(--text-2);
   white-space: nowrap;
+}
+
+.rough-unit {
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 /* 한 칸 입력으로 바뀐 뒤 추가된 것들 */
 .meal-sheet section > .card-title {
   margin-bottom: 4px;
+}
+
+.meal-sheet #rough-title {
+  margin-bottom: 8px;
+}
+
+/* 시트 안의 구획 사이는 조금 더 벌려, 입력 칸·내 기록·대충 기록이 한 덩어리씩 읽히게 한다. */
+.meal-sheet > section {
+  margin-top: 4px;
+}
+
+.meal-sheet .small.muted {
+  text-wrap: pretty;
+}
+
+.meal-sheet #meal-entry-hint {
+  margin-top: -4px;
+  line-height: 1.5;
+}
+
+.meal-sheet-head .small {
+  margin-top: 2px;
+}
+
+/* 음식 목록을 불러오는 동안: 결과 줄 자리에 같은 높이의 자리 표시를 둔다. */
+.food-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 14px 0 6px;
+}
+
+.food-skeleton > .skeleton {
+  display: block;
+  height: 38px;
+}
+
+.food-skeleton > .skeleton:nth-child(1) {
+  width: 62%;
+}
+
+.food-skeleton > .skeleton:nth-child(2) {
+  width: 78%;
+}
+
+.food-skeleton > .skeleton:nth-child(3) {
+  width: 54%;
 }
 
 .entry-source {

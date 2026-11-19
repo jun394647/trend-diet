@@ -1,8 +1,16 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_DAILY_LIMIT, type AiErrorBody, type AiResponse, type AiStatus, type AiTask } from '../../src/ai/contract.ts'
+import {
+  AI_STREAM_MIME,
+  DEFAULT_DAILY_LIMIT,
+  type AiErrorBody,
+  type AiResponse,
+  type AiStatus,
+  type AiStreamEvent,
+  type AiTask,
+} from '../../src/ai/contract.ts'
 import { TASKS, sampleRequests, sampleResults } from './fixtures.ts'
-import { dailyLimit, handleAi, type AiDeps, type Env } from './handler.ts'
+import { dailyLimit, handleAi, peekToken, type AiDeps, type Env } from './handler.ts'
 import type { CallModel } from './model.ts'
 
 const ENV: Env = {
@@ -19,6 +27,8 @@ interface Setup {
   takeStatus?: number
   fetchThrowsOn?: 'auth' | 'usage'
   callModel?: CallModel
+  /** 로그인 확인 응답을 이 약속이 풀릴 때까지 붙잡아 둔다. */
+  holdAuth?: Promise<void>
 }
 
 function setup(o: Setup = {}) {
@@ -28,6 +38,7 @@ function setup(o: Setup = {}) {
     calls.push({ url, init })
     if (url.endsWith('/auth/v1/user')) {
       if (o.fetchThrowsOn === 'auth') throw new Error('network')
+      if (o.holdAuth) await o.holdAuth
       return Response.json(o.user ?? { id: 'user-1', email: 'Me@Example.com' }, { status: o.authStatus ?? 200 })
     }
     if (url.endsWith('/rest/v1/rpc/ai_take')) {
@@ -333,5 +344,268 @@ describe('GET 상태에 오늘 쓴 횟수 덧붙이기', () => {
       throw new Error('network')
     })
     expect((await run(get({ Authorization: 'Bearer tok' }), g as never)).body.used).toBeUndefined()
+  })
+})
+
+// ── 로그인 확인과 횟수 쓰기를 함께 보내기 ─────────────────────────────
+
+/** 서명은 가짜지만 모양은 로그인 토큰인 것. 서버는 모양만 보고 함께 보낼지 정하고, 진짜 확인은 Supabase가 한다. */
+function jwt(payload: Record<string, unknown>): string {
+  const part = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url')
+  return `${part({ alg: 'HS256', typ: 'JWT' })}.${part(payload)}.sig`
+}
+const inAnHour = () => Math.floor(Date.now() / 1000) + 3600
+const goodToken = () => jwt({ sub: 'user-1', email: 'me@example.com', exp: inAnHour() })
+const withToken = (token: string, extra: Record<string, string> = {}) => ({ Authorization: `Bearer ${token}`, ...extra })
+
+describe('peekToken', () => {
+  it('만료되지 않은 로그인 토큰의 모양이면 적힌 이메일을 돌려준다', () => {
+    expect(peekToken(goodToken())).toEqual({ email: 'me@example.com' })
+    expect(peekToken(jwt({ sub: 'u', exp: inAnHour() }))).toEqual({ email: null })
+  })
+
+  it('모양이 아니거나, 만료됐거나, 사용자가 없으면 null이다', () => {
+    expect(peekToken('tok-123')).toBeNull()
+    expect(peekToken('a.b.c')).toBeNull()
+    expect(peekToken(jwt({ sub: 'u', exp: Math.floor(Date.now() / 1000) - 1 }))).toBeNull()
+    expect(peekToken(jwt({ sub: 'u' }))).toBeNull()
+    expect(peekToken(jwt({ exp: inAnHour() }))).toBeNull()
+    expect(peekToken(`${'x'.repeat(10)}.${Buffer.from('null').toString('base64url')}.s`)).toBeNull()
+  })
+})
+
+describe('POST /api/ai: 확인을 함께 보내기', () => {
+  it('통과할 것으로 보이는 요청은 로그인 확인이 끝나기를 기다리지 않고 횟수를 쓴다', async () => {
+    let release: () => void = () => {}
+    const s = setup({ holdAuth: new Promise<void>((r) => (release = r)), take: 5 })
+    const pending = handleAi(post(sampleRequests.suggest, withToken(goodToken())), s.deps)
+    await vi.waitFor(() => expect(s.usageCalls()).toHaveLength(1))
+    expect(s.authCalls()).toHaveLength(1)
+    // 로그인 확인이 아직 끝나지 않았으니 모델은 부르지 않았다.
+    expect(s.callModel).not.toHaveBeenCalled()
+    release()
+    const res = await pending
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as AiResponse).usage).toEqual({ used: 5, limit: DEFAULT_DAILY_LIMIT })
+    expect(s.usageCalls()).toHaveLength(1)
+    expect(s.callModel).toHaveBeenCalledTimes(1)
+  })
+
+  it('함께 보냈어도 로그인 확인이 떨어지면 unauthorized이고 모델을 부르지 않는다', async () => {
+    const s = setup({ authStatus: 401, user: { message: 'invalid JWT' } })
+    const res = await handleAi(post(sampleRequests.ask, withToken(goodToken())), s.deps)
+    expect(res.status).toBe(401)
+    expect((await errorOf(res)).error).toBe('unauthorized')
+    expect(s.callModel).not.toHaveBeenCalled()
+  })
+
+  it('함께 보냈을 때도 한도를 넘으면 limit, 횟수를 확인하지 못하면 failed다', async () => {
+    const over = setup({ take: -1 })
+    const res = await handleAi(post(sampleRequests.ask, withToken(goodToken())), over.deps)
+    expect(res.status).toBe(429)
+    expect(await errorOf(res)).toEqual({ ok: false, error: 'limit', usage: { used: DEFAULT_DAILY_LIMIT, limit: DEFAULT_DAILY_LIMIT } })
+    expect(over.callModel).not.toHaveBeenCalled()
+
+    const down = setup({ fetchThrowsOn: 'usage' })
+    expect((await handleAi(post(sampleRequests.ask, withToken(goodToken())), down.deps)).status).toBe(500)
+    expect(down.callModel).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['형식이 틀린 요청', { task: 'nope' }, goodToken(), {}, 400, 'bad_request'],
+    ['만료된 토큰', sampleRequests.ask, jwt({ sub: 'user-1', email: 'me@example.com', exp: 1 }), {}, 200, null],
+    ['토큰의 이메일이 허용 목록에 없을 때', sampleRequests.ask, jwt({ sub: 'x', email: 'other@example.com', exp: inAnHour() }), { AI_ALLOWED_EMAILS: 'me@example.com' }, 200, null],
+    ['허용 목록이 있는데 토큰에 이메일이 없을 때', sampleRequests.ask, jwt({ sub: 'x', exp: inAnHour() }), { AI_ALLOWED_EMAILS: 'me@example.com' }, 200, null],
+  ] as const)('%s: 차례로 확인한다(로그인 확인이 끝나기 전에는 횟수를 쓰지 않는다)', async (_name, body, token, env, status, error) => {
+    let release: () => void = () => {}
+    const s = setup({ env: { ...ENV, ...env }, holdAuth: new Promise<void>((r) => (release = r)) })
+    const pending = handleAi(post(body, withToken(token)), s.deps)
+    await vi.waitFor(() => expect(s.authCalls()).toHaveLength(1))
+    await new Promise((r) => setTimeout(r, 5))
+    expect(s.usageCalls()).toHaveLength(0)
+    release()
+    const res = await pending
+    expect(res.status).toBe(status)
+    if (error) {
+      expect((await errorOf(res)).error).toBe(error)
+      expect(s.usageCalls()).toHaveLength(0)
+    }
+  })
+
+  it('토큰에는 허용된 이메일이 적혀 있는데 확인된 계정이 다르면 forbidden이고 모델을 부르지 않는다', async () => {
+    const s = setup({ env: { ...ENV, AI_ALLOWED_EMAILS: 'me@example.com' }, user: { id: 'user-2', email: 'other@example.com' } })
+    const res = await handleAi(post(sampleRequests.ask, withToken(goodToken())), s.deps)
+    expect(res.status).toBe(403)
+    expect(s.callModel).not.toHaveBeenCalled()
+  })
+
+  it('허용 목록에 있는 계정은 함께 보낸다', async () => {
+    const s = setup({ env: { ...ENV, AI_ALLOWED_EMAILS: 'Me@Example.com' }, holdAuth: Promise.resolve() })
+    const res = await handleAi(post(sampleRequests.ask, withToken(goodToken())), s.deps)
+    expect(res.status).toBe(200)
+    expect(s.usageCalls()).toHaveLength(1)
+  })
+})
+
+// ── 조금씩 보내기 ───────────────────────────────────────────────
+
+const STREAM = { Authorization: 'Bearer tok-123', Accept: `${AI_STREAM_MIME}, application/json` }
+
+/** SSE 본문을 사건 목록으로 읽는다. onEvent는 사건이 도착하는 대로 불린다. */
+async function readEvents(res: Response, onEvent?: (e: AiStreamEvent) => void): Promise<AiStreamEvent[]> {
+  const out: AiStreamEvent[] = []
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let cut: number
+    while ((cut = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, cut)
+      buf = buf.slice(cut + 2)
+      expect(frame.startsWith('data: ')).toBe(true)
+      const event = JSON.parse(frame.slice(6)) as AiStreamEvent
+      out.push(event)
+      onEvent?.(event)
+    }
+  }
+  expect(buf).toBe('')
+  return out
+}
+
+describe('POST /api/ai: 조금씩 보내기', () => {
+  it('ask: 시작, 쓰이는 중인 답, 끝을 차례로 보낸다. 끝은 한 덩어리 응답과 같은 내용이다', async () => {
+    const gates: (() => void)[] = []
+    const gate = () => new Promise<void>((r) => gates.push(r))
+    const s = setup({
+      take: 7,
+      callModel: async ({ onPartial }) => {
+        await gate()
+        onPartial?.({ answer: '외식 날은' })
+        await gate()
+        onPartial?.({ answer: '외식 날은 범위 위쪽까지' })
+        await gate()
+        return { ok: true, result: sampleResults.ask }
+      },
+    })
+    const res = await handleAi(post(sampleRequests.ask, STREAM), s.deps)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toContain(AI_STREAM_MIME)
+    expect(res.headers.get('Cache-Control')).toBe('no-store, no-transform')
+
+    // 모델이 아직 한 글자도 쓰지 않았어도 응답은 이미 시작됐고, 사건은 모델이 쓰는 대로 하나씩 도착한다.
+    const seen: string[] = []
+    const usage = { used: 7, limit: DEFAULT_DAILY_LIMIT }
+    const events = await readEvents(res, (e) => {
+      seen.push(e.type)
+      gates.shift()?.()
+    })
+    expect(seen).toEqual(['start', 'partial', 'partial', 'done'])
+    expect(events).toEqual([
+      { type: 'start', usage },
+      { type: 'partial', result: { answer: '외식 날은' } },
+      { type: 'partial', result: { answer: '외식 날은 범위 위쪽까지' } },
+      { type: 'done', ok: true, result: sampleResults.ask, usage },
+    ])
+    expect(s.usageCalls()).toHaveLength(1)
+    expect(s.callModel).toHaveBeenCalledTimes(1)
+    expect(s.callModel.mock.calls[0][0]).toMatchObject({ userId: 'user-1', request: { task: 'ask' } })
+    expect(s.callModel.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('week-review도 조금씩 보낸다', async () => {
+    const s = setup({
+      callModel: async ({ onPartial }) => {
+        onPartial?.({ headline: '주 평균이' })
+        return { ok: true, result: sampleResults['week-review'] }
+      },
+    })
+    const events = await readEvents(await handleAi(post(sampleRequests['week-review'], STREAM), s.deps))
+    expect(events.map((e) => e.type)).toEqual(['start', 'partial', 'done'])
+    expect(events[1]).toEqual({ type: 'partial', result: { headline: '주 평균이' } })
+    expect(events[2]).toMatchObject({ ok: true, result: sampleResults['week-review'] })
+  })
+
+  it.each([
+    ['refused'],
+    ['busy'],
+    ['failed'],
+  ] as const)('도중에 모델이 %s로 끝나면 error 사건으로 알리고 쓴 횟수를 함께 보낸다', async (error) => {
+    const s = setup({
+      take: 9,
+      callModel: async ({ onPartial }) => {
+        onPartial?.({ answer: '외식 날은' })
+        return { ok: false, error }
+      },
+    })
+    const res = await handleAi(post(sampleRequests.ask, STREAM), s.deps)
+    expect(res.status).toBe(200)
+    const events = await readEvents(res)
+    expect(events.map((e) => e.type)).toEqual(['start', 'partial', 'error'])
+    expect(events[2]).toEqual({ type: 'error', ok: false, error, usage: { used: 9, limit: DEFAULT_DAILY_LIMIT } })
+  })
+
+  it('callModel이 던져도 failed 사건으로 끝맺는다', async () => {
+    const s = setup({
+      callModel: async () => {
+        throw new Error('boom')
+      },
+    })
+    const events = await readEvents(await handleAi(post(sampleRequests.ask, STREAM), s.deps))
+    expect(events[events.length - 1]).toMatchObject({ type: 'error', ok: false, error: 'failed', usage: { used: 3 } })
+  })
+
+  it('확인 단계의 실패는 조금씩 받겠다고 해도 평소의 JSON 오류와 상태 코드다', async () => {
+    const cases: [Setup, unknown, Record<string, string>, number, string][] = [
+      [{ env: { ...ENV, ANTHROPIC_API_KEY: '' } }, sampleRequests.ask, STREAM, 503, 'not_configured'],
+      [{}, sampleRequests.ask, { Accept: AI_STREAM_MIME }, 401, 'unauthorized'],
+      [{ authStatus: 401 }, sampleRequests.ask, STREAM, 401, 'unauthorized'],
+      [{}, { task: 'ask' }, STREAM, 400, 'bad_request'],
+      [{ env: { ...ENV, AI_ALLOWED_EMAILS: 'a@b.c' } }, sampleRequests.ask, STREAM, 403, 'forbidden'],
+      [{ take: -1 }, sampleRequests.ask, STREAM, 429, 'limit'],
+      [{ takeStatus: 500 }, sampleRequests.ask, STREAM, 500, 'failed'],
+    ]
+    for (const [o, body, headers, status, error] of cases) {
+      const s = setup(o)
+      const res = await handleAi(post(body, headers), s.deps)
+      expect(res.status).toBe(status)
+      expect(res.headers.get('Content-Type')).toContain('application/json')
+      expect((await errorOf(res)).error).toBe(error)
+      expect(s.callModel).not.toHaveBeenCalled()
+    }
+  })
+
+  it('조금씩 받을 수 없는 task와 Accept를 붙이지 않은 요청은 JSON 한 덩어리로 답한다', async () => {
+    for (const [body, headers] of [
+      [sampleRequests['meal-text'], STREAM],
+      [sampleRequests.suggest, STREAM],
+      [sampleRequests.ask, { Authorization: 'Bearer tok-123' }],
+      [sampleRequests.ask, { Authorization: 'Bearer tok-123', Accept: 'application/json' }],
+    ] as const) {
+      const s = setup()
+      const res = await handleAi(post(body, headers), s.deps)
+      expect(res.headers.get('Content-Type')).toContain('application/json')
+      expect(((await res.json()) as AiResponse).ok).toBe(true)
+      expect(s.callModel.mock.calls[0][0].onPartial).toBeUndefined()
+    }
+  })
+
+  it('받는 쪽이 떠나면 모델 호출에 그만두라고 알린다', async () => {
+    let signal: AbortSignal | undefined
+    const s = setup({
+      callModel: ({ signal: given, onPartial }) => {
+        signal = given
+        onPartial?.({ answer: '외식' })
+        return new Promise((resolve) => given?.addEventListener('abort', () => resolve({ ok: false, error: 'busy' })))
+      },
+    })
+    const res = await handleAi(post(sampleRequests.ask, STREAM), s.deps)
+    const reader = res.body!.getReader()
+    await reader.read()
+    expect(signal?.aborted).toBe(false)
+    await reader.cancel()
+    expect(signal?.aborted).toBe(true)
   })
 })

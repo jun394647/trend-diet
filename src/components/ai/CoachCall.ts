@@ -1,4 +1,4 @@
-import { AiError, callAi } from '../../ai/client'
+import { AiError, callAi, type AiPartial } from '../../ai/client'
 import type { AiRequest, AiResultMap } from '../../ai/contract'
 import { quotaLeft, useAi } from '../../ai/store'
 import { today } from '../../lib/date'
@@ -13,8 +13,14 @@ export const AI_TIMEOUT_MS = 55_000
  * 사용량은 여기서 고쳐 두고, 실패는 항상 AiError로 던진다.
  * 기다리는 사이에 계정이 바뀌었으면 답은 앞 계정의 것이다. 사용량과 사용 가능 여부를 새 계정에 적지 않고,
  * 받은 답도 버린다(AiError('failed')로 던진다).
+ *
+ * onPartial을 주면 조금씩 받을 수 있는 task(ask, week-review)는 쓰이는 대로 알려 준다(매번 지금까지의 전체).
+ * 시간 초과로 그만둔 뒤나 계정이 바뀐 뒤에는 알리지 않는다. 호출이 실패로 끝나면 부른 쪽이 그동안 받은 것을 버려야 한다.
  */
-export async function callAiOnce<R extends AiRequest>(request: R): Promise<AiResultMap[R['task']]> {
+export async function callAiOnce<R extends AiRequest>(
+  request: R,
+  onPartial?: (partial: AiPartial<R['task']>) => void,
+): Promise<AiResultMap[R['task']]> {
   const email = useSync.getState().email
   const sameAccount = () => useSync.getState().email === email
   const controller = new AbortController()
@@ -25,8 +31,15 @@ export async function callAiOnce<R extends AiRequest>(request: R): Promise<AiRes
       reject(new AiError('busy'))
     }, AI_TIMEOUT_MS)
   })
+  const guarded =
+    onPartial &&
+    ((partial: AiPartial<R['task']>) => {
+      if (!controller.signal.aborted && sameAccount()) onPartial(partial)
+    })
   try {
-    const { result, usage } = await Promise.race([callAi(request, controller.signal), timeout])
+    // onPartial이 없을 때는 인자를 예전과 똑같이 넘긴다.
+    const call = guarded ? callAi(request, controller.signal, { onPartial: guarded }) : callAi(request, controller.signal)
+    const { result, usage } = await Promise.race([call, timeout])
     if (!sameAccount()) throw new AiError('failed')
     useAi.getState().setUsage(usage)
     return result

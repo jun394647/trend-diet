@@ -41,6 +41,24 @@
 node scripts/build-food-db.mjs   # 최신 데이터를 다시 받아 public/food-db.json 갱신
 ```
 
+## AI 기능
+
+Claude API로 다섯 가지를 합니다. 모두 로그인한 사용자만 쓸 수 있고, 한 사람당 하루 호출 수에 한도가 있습니다.
+
+| 기능 | 위치 | 하는 일 |
+|---|---|---|
+| 말로 기록 | 식사 추가 | "김치찌개랑 밥 한 공기"처럼 적으면 음식별 칼로리를 어림잡습니다. |
+| 사진으로 기록 | 식사 추가 | 음식 사진에서 음식별 칼로리를 어림잡습니다. |
+| 다음 끼 추천 | 오늘 | 오늘 남은 범위에 맞는 식사를 제안하고 한 번에 기록합니다. |
+| 돌아보기 | 주간 체크인 | 최근 2주를 읽고 잘된 점과 해 볼 만한 한 가지를 적습니다. |
+| 코치 | 코치 탭 | 내 기록을 보고 질문에 답합니다. |
+
+- **구조**: 브라우저는 `POST /api/ai` 한 곳만 부릅니다(`api/ai.ts` → `server/ai/`). 서버 함수가 로그인 토큰을 확인하고, 하루 사용 횟수를 차감한 뒤 Claude를 부릅니다. API 키는 서버에만 있습니다. 요청·응답 형식은 `src/ai/contract.ts`에 있습니다.
+- **모델**: `claude-opus-5-5`, 구조화 출력(Zod 스키마)으로 응답을 받습니다. (`server/ai/model.ts`, 프롬프트는 `server/ai/prompts.ts`)
+- **보내는 것**: 적은 글, 고른 사진, 그리고 추천·돌아보기·코치에는 기본 정보(성별·나이·키)와 최근 14일의 체중·식사 기록, 지금 계획. 이름과 이메일은 보내지 않습니다. (`src/ai/context.ts`)
+- **환경변수(Vercel)**: `ANTHROPIC_API_KEY`(필수. 없으면 AI 화면이 나타나지 않음), `AI_DAILY_LIMIT`(기본 40), `AI_ALLOWED_EMAILS`(쉼표로 구분. 넣으면 그 계정만 사용 가능)
+- **점검**: `node scripts/ai-smoke.mjs <주소> <로그인 토큰>` 으로 다섯 기능을 실제 호출해 봅니다(횟수 5회 사용).
+
 ## 계정 동기화
 
 - **저장소**: Supabase(Postgres). 테이블은 `public.records` 하나이고, 프로필·체중·식사·즐겨찾기·체크인을 `(user_id, kind, key)` 단위의 JSON으로 저장합니다. 스키마는 `supabase/migrations/`에 있습니다.
@@ -72,6 +90,8 @@ src/
   index.css     디자인 시스템 (색·글꼴 토큰, 공통 구성 요소)
   storage.ts    저장 계층. 화면은 Dexie를 직접 쓰지 않습니다.
   sync/         계정 동기화 (엔진, Supabase 연결, 상태)
+  ai/           AI 기능의 계약, 호출, 상태 (화면 쪽)
+api/, server/   AI 서버 함수 (Vercel)
   store.ts      zustand 상태와 동작
   pages/        화면
   components/   화면에서 쓰는 조각

@@ -69,11 +69,14 @@ export const MODEL: ModelId = 'claude-opus-5-5'
 
 /** 가장 싼 모델. 입력·출력 토큰 값이 Opus 5.5의 40분의 1이다. */
 export const CHEAP_MODEL: ModelId = 'claude-haiku-5-5'
+/** 사진에 쓰는 모델. 값은 Opus의 절반이고, 여러 반찬이 놓인 사진을 Haiku보다 잘 알아보도록 고른 중간 모델이다. */
+export const PHOTO_MODEL: ModelId = 'claude-sonnet-5-5'
 
 /**
  * task별 기본 설정. 모델·effort를 바꿀 때는 여기 한 곳만 고친다.
  *
  * 2026-11-19 주인 요청으로 비용을 가장 적게 쓰는 쪽으로 바꿨다: 모든 task가 Haiku 5.5, effort low, 생각하기 끔.
+ * 사진(meal-photo)만은 가성비를 위해 Sonnet 5.5를 쓴다(생각하기 끔). 사진 한 장에 1센트 안팎이다.
  * 생각하기를 끄면 생각에 쓰는 출력 토큰이 없어진다. 대신 답의 질과 속도는 Opus보다 떨어질 수 있다.
  * Haiku는 서버 쪽 대체 모델(fallbacks)을 지원하지 않아, 거절하면 그대로 refused가 된다.
  * 시스템 프롬프트가 Haiku의 최소 캐시 크기보다 짧아 캐시는 쓰지 않는다.
@@ -84,7 +87,7 @@ export const CHEAP_MODEL: ModelId = 'claude-haiku-5-5'
  */
 export const TASK_DEFAULTS: Record<ModelTask, TaskConfig> = {
   'meal-text': { model: CHEAP_MODEL, effort: 'low', maxTokens: 2000, thinking: 'off', cacheSystem: false, speed: 'standard' },
-  'meal-photo': { model: CHEAP_MODEL, effort: 'low', maxTokens: 2000, thinking: 'off', cacheSystem: false, speed: 'standard' },
+  'meal-photo': { model: PHOTO_MODEL, effort: 'low', maxTokens: 2000, thinking: 'off', cacheSystem: false, speed: 'standard' },
   suggest: { model: CHEAP_MODEL, effort: 'low', maxTokens: 2000, thinking: 'off', cacheSystem: false, speed: 'standard' },
   'week-review': { model: CHEAP_MODEL, effort: 'low', maxTokens: 3000, thinking: 'off', cacheSystem: false, speed: 'standard' },
   ask: { model: CHEAP_MODEL, effort: 'low', maxTokens: 3000, thinking: 'off', cacheSystem: false, speed: 'standard' },

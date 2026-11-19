@@ -7,6 +7,7 @@ import {
   FALLBACK_BETA,
   MODEL,
   CHEAP_MODEL,
+  PHOTO_MODEL,
   MODEL_RULES,
   TASK_DEFAULTS,
   buildParams,
@@ -45,7 +46,7 @@ const opus = (task: ModelTask) => ({ ...TASK_DEFAULTS[task], model: 'claude-opus
 const OPUS_ENV = { AI_MODEL_ASK: 'claude-opus-5-5', AI_THINKING_ASK: 'on' }
 
 describe('buildParams', () => {
-  it.each(TASKS)('%s: 기본은 가장 싼 모델에 생각하기를 끄고, 구조화 출력으로 받는다', (task) => {
+  it.each(TASKS.filter((t) => t !== 'meal-photo'))('%s: 기본은 가장 싼 모델에 생각하기를 끄고, 구조화 출력으로 받는다', (task) => {
     const p = buildParams(sampleRequests[task]) as unknown as Record<string, unknown>
     expect(p.model).toBe('claude-haiku-5-5')
     expect(p.max_tokens).toBe(TASK_DEFAULTS[task].maxTokens)
@@ -72,6 +73,15 @@ describe('buildParams', () => {
     expect(p.betas).toEqual([FALLBACK_BETA])
     expect(p.fallbacks).toBe('default')
     expect(p).not.toHaveProperty('thinking')
+  })
+
+  it('사진은 Sonnet 5.5가 생각하기 없이(between_tools) 보고, 서버 쪽 대체 모델도 함께 보낸다', () => {
+    const p = buildParams(sampleRequests['meal-photo']) as unknown as Record<string, unknown>
+    expect(p.model).toBe('claude-sonnet-5-5')
+    expect(p.thinking).toEqual({ type: 'between_tools' })
+    expect(p.betas).toEqual([FALLBACK_BETA])
+    expect(p.fallbacks).toBe('default')
+    expect((p.output_config as { effort: string }).effort).toBe('low')
   })
 
   it('모델이 거절하는 파라미터는 보내지 않는다', () => {
@@ -104,10 +114,10 @@ describe('buildParams', () => {
 })
 
 describe('task별 설정', () => {
-  it('기본값은 모든 task가 가장 싼 모델이고, 생각하기는 끈다', () => {
+  it('기본값은 사진만 Sonnet, 나머지는 가장 싼 모델이고, 생각하기는 모두 끈다', () => {
     for (const task of Object.keys(TASK_DEFAULTS) as ModelTask[]) {
       expect(taskConfig(task, {})).toEqual(TASK_DEFAULTS[task])
-      expect(TASK_DEFAULTS[task].model).toBe(CHEAP_MODEL)
+      expect(TASK_DEFAULTS[task].model).toBe(task === 'meal-photo' ? PHOTO_MODEL : CHEAP_MODEL)
       expect(TASK_DEFAULTS[task].thinking).toBe('off')
     }
     expect(CHEAP_MODEL).toBe('claude-haiku-5-5')

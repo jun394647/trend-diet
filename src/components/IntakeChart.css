@@ -1,5 +1,39 @@
+.intake-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
 .intake-chart-plot {
   width: 100%;
-  height: 160px;
+  height: 180px;
   min-width: 0;
+}
+
+.intake-key {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px 3px 1px 1px;
+}
+
+.intake-key--band {
+  width: 16px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--mark-soft);
+  border-block: 1.5px dashed var(--mark);
+}
+
+.intake-key--in {
+  background: var(--accent);
+}
+
+.intake-key--over {
+  background: var(--warn);
+}
+
+.intake-key--under {
+  background: color-mix(in srgb, var(--accent) 45%, var(--bg));
 }

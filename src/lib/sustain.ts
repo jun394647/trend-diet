@@ -57,6 +57,8 @@ export interface WeekSummary {
   days: WeekDay[]
   /** 식사를 기록한 날 수. */
   mealDays: number
+  /** 평균을 낼 때 센 날 수. 아직 다 먹지 않은 오늘은 빠질 수 있다. */
+  avgDays: number
   /** 식사나 체중 중 하나라도 기록한 날 수. */
   recordedDays: number
   /** 식사를 기록한 날들의 하루 평균. 기록이 없으면 null. */
@@ -64,14 +66,19 @@ export interface WeekSummary {
   avgState: IntakeState | 'none'
 }
 
-/** asOf가 속한 주(월~일)를 요약한다. 기록하지 않은 날은 평균에서 뺀다. */
+/**
+ * asOf가 속한 주(월~일)를 요약한다. 기록하지 않은 날은 평균에서 뺀다.
+ * inProgress로 넘긴 날(보통 오늘)은 아직 범위에 못 미쳤고 다른 기록이 있으면 평균에서 뺀다.
+ * 하루가 끝나기 전의 적은 섭취량 때문에 한 주 평균이 낮게 보이는 것을 막기 위해서다.
+ */
 export function weekSummary(args: {
   meals: MealEntry[]
   weights: WeightEntry[]
   targetKcal: number
   asOf: DateStr
+  inProgress?: DateStr
 }): WeekSummary {
-  const { meals, weights, targetKcal, asOf } = args
+  const { meals, weights, targetKcal, asOf, inProgress } = args
   const start = weekStart(asOf)
   const perDay = new Map<DateStr, number>()
   for (const m of meals) perDay.set(m.date, (perDay.get(m.date) ?? 0) + m.kcal)
@@ -89,11 +96,14 @@ export function weekSummary(args: {
     })
   }
   const logged = days.filter((d) => d.kcal !== null)
+  const settled = logged.filter((d) => !(d.date === inProgress && d.state === 'under'))
+  const counted = settled.length > 0 ? settled : logged
   const avgKcal =
-    logged.length > 0 ? Math.round(logged.reduce((s, d) => s + (d.kcal ?? 0), 0) / logged.length) : null
+    counted.length > 0 ? Math.round(counted.reduce((s, d) => s + (d.kcal ?? 0), 0) / counted.length) : null
   return {
     days,
     mealDays: logged.length,
+    avgDays: counted.length,
     recordedDays: days.filter((d) => d.kcal !== null || d.weighed).length,
     avgKcal,
     avgState: avgKcal === null ? 'none' : intakeState(avgKcal, targetKcal),

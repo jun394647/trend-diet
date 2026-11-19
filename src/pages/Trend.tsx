@@ -6,6 +6,7 @@ import WeightChart from '../components/WeightChart'
 import { addDays, diffDays, formatKorean, formatShort, parseDate, today } from '../lib/date'
 import { currentPlan } from '../lib/plan'
 import { CHECKIN_INTERVAL_DAYS, isCheckinDue, latestCheckin } from '../lib/selectors'
+import { effectiveWeeklyLoss, intakeState, phaseOf, progress, targetRange, weekOfPhase } from '../lib/sustain'
 import { projectGoalDate } from '../lib/tdee'
 import { computeTrend } from '../lib/trend'
 import { useStore } from '../store'
@@ -18,6 +19,8 @@ const RANGES = [
   { key: 'all', label: '전체', days: null, phrase: '전체 기간' },
 ] as const
 type RangeKey = (typeof RANGES)[number]['key']
+
+const fmtKcal = (n: number) => Math.round(n).toLocaleString('ko-KR')
 
 /** 부호를 붙인 숫자. 반올림해서 0이면 부호 없이 돌려준다. */
 function signed(n: number, digits: number): string {
@@ -66,6 +69,12 @@ export default function Trend() {
     return { first, last, delta, perWeek: (delta / span) * 7 }
   }, [visible])
 
+  const plan = useMemo(() => currentPlan(checkins), [checkins])
+  const last = useMemo(() => latestCheckin(checkins), [checkins])
+  const due = useMemo(() => isCheckinDue(checkins, asOf), [checkins, asOf])
+  const daysLeft = last ? CHECKIN_INTERVAL_DAYS - diffDays(last.date, asOf) : null
+  const targetKcal = plan?.targetKcal
+
   const intake = useMemo(() => {
     const perDay = new Map<string, number>()
     for (const m of meals) {
@@ -79,51 +88,66 @@ export default function Trend() {
       data.push({ date, kcal: perDay.get(date) ?? null })
     }
     let sum = 0
-    for (const v of perDay.values()) sum += v
-    return { data, loggedDays: perDay.size, avg: perDay.size > 0 ? Math.round(sum / perDay.size) : null }
-  }, [meals, from, asOf])
+    const counts = { in: 0, over: 0, under: 0 }
+    for (const v of perDay.values()) {
+      sum += v
+      if (targetKcal !== undefined) counts[intakeState(v, targetKcal)]++
+    }
+    return { data, counts, loggedDays: perDay.size, avg: perDay.size > 0 ? Math.round(sum / perDay.size) : null }
+  }, [meals, from, asOf, targetKcal])
 
-  const plan = useMemo(() => currentPlan(checkins), [checkins])
-  const last = useMemo(() => latestCheckin(checkins), [checkins])
-  const due = isCheckinDue(checkins, asOf)
-  const daysLeft = last ? CHECKIN_INTERVAL_DAYS - diffDays(last.date, asOf) : null
+  const phase = profile ? phaseOf(profile) : null
+  const prog = useMemo(
+    () =>
+      profile && current
+        ? progress({ startKg: profile.startWeightKg, goalKg: profile.goalWeightKg, trendKg: current.trend })
+        : null,
+    [profile, current],
+  )
+  const reached = prog !== null && prog.remainingKg === 0
+  // 시작 체중이 목표보다 높을 때만 시작→목표 눈금이 의미가 있다.
+  const hasSpan = profile !== null && profile.startWeightKg > profile.goalWeightKg
 
-  const remaining = current && goalKg !== undefined ? current.trend - goalKg : null
-  const reached = remaining !== null && remaining <= 0
-  const weeklyLossKg = profile?.weeklyLossKg ?? 0
+  const weeklyLossKg = profile ? effectiveWeeklyLoss(profile) : 0
   const projected =
-    current && goalKg !== undefined && !reached && weeklyLossKg > 0
+    phase === 'lose' && current && goalKg !== undefined && !reached && weeklyLossKg > 0
       ? projectGoalDate({ trendKg: current.trend, goalKg, weeklyLossKg, from: asOf })
       : null
-
-  // 목표 방향으로 움직였을 때만 색으로 강조한다. 감량 자체를 빨갛게 표시하지 않는다.
-  const towardGoal =
-    change !== null &&
-    goalKg !== undefined &&
-    Math.abs(change.delta) >= 0.05 &&
-    (goalKg - change.first.trend) * change.delta > 0
+  const breakUntil = phase === 'maintain' ? (profile?.breakUntil ?? null) : null
 
   const caption = change
-    ? `${range.phrase}(${formatShort(change.first.date)}~${formatShort(change.last.date)}) 동안 추세 체중이 ${change.first.trend.toFixed(1)}kg에서 ${change.last.trend.toFixed(1)}kg으로 ${
+    ? `${range.phrase}(${formatShort(change.first.date)}~${formatShort(change.last.date)}) 동안 추세 체중이 ${change.first.trend.toFixed(1)} kg에서 ${change.last.trend.toFixed(1)} kg으로 ${
         Math.abs(change.delta) < 0.05
           ? '거의 변하지 않았어요'
-          : `${Math.abs(change.delta).toFixed(1)}kg ${change.delta < 0 ? '줄었어요' : '늘었어요'}`
+          : `${Math.abs(change.delta).toFixed(1)} kg ${change.delta < 0 ? '줄었어요' : '늘었어요'}`
       }.`
     : null
+
+  function progressLine(): string {
+    if (!profile || !prog || !current) return ''
+    if (reached) {
+      return phase === 'maintain'
+        ? '목표 체중에 닿았어요. 이제는 이 근처에 머무는 게 목표예요.'
+        : '목표 체중에 닿았어요. 다음 체크인에서 유지로 넘어갈 수 있어요.'
+    }
+    const lost = Number(prog.lostKg.toFixed(1))
+    const head =
+      lost > 0
+        ? `시작보다 ${lost.toFixed(1)} kg 줄었어요`
+        : lost < 0
+          ? `지금은 시작보다 ${Math.abs(lost).toFixed(1)} kg 높아요`
+          : '시작 체중과 거의 같아요'
+    if (prog.nextStepKg === null) return `${head}.`
+    const toNext = Math.max(0.1, current.trend - prog.nextStepKg).toFixed(1)
+    const stepName = prog.nextStepKg <= profile.goalWeightKg ? '목표' : '다음 단계'
+    return `${head} · ${stepName} ${prog.nextStepKg.toFixed(1)} kg까지 ${toNext} kg`
+  }
 
   return (
     <main className="page trend-page">
       <h1 className="page-title">추세</h1>
 
-      <div className="segmented" role="group" aria-label="기간 선택">
-        {RANGES.map((r) => (
-          <button key={r.key} type="button" aria-pressed={r.key === rangeKey} onClick={() => setRangeKey(r.key)}>
-            {r.label}
-          </button>
-        ))}
-      </div>
-
-      <section className="card" aria-labelledby="trend-summary-title">
+      <section className="panel trend-hero" aria-labelledby="trend-summary-title">
         <h2 className="card-title" id="trend-summary-title">
           현재 추세 체중
         </h2>
@@ -133,51 +157,48 @@ export default function Trend() {
               <span data-testid="trend-current">{current.trend.toFixed(1)}</span>
               <span className="trend-unit">kg</span>
             </p>
-            <p className="small muted trend-hint">하루하루의 오르내림을 걸러 낸 실제 체중 흐름이에요.</p>
-            <ul className="list trend-stats">
-              <li>
-                <span className="muted">{range.phrase} 변화</span>
-                {change ? (
-                  <span className={`num trend-stat-value${towardGoal ? ' trend-good' : ''}`}>
-                    {signed(change.delta, 1)}kg
-                  </span>
-                ) : (
-                  <span className="muted small">기록이 더 필요해요</span>
+            {profile && prog && (
+              <>
+                {hasSpan && (
+                  <div
+                    className="trend-progress"
+                    role="img"
+                    aria-label={`시작 ${profile.startWeightKg.toFixed(1)} kg에서 목표 ${profile.goalWeightKg.toFixed(1)} kg까지 ${Math.round(prog.ratio * 100)}% 왔어요`}
+                  >
+                    <div className="trend-progress-track">
+                      {prog.ratio > 0 && (
+                        <div className="trend-progress-fill" style={{ width: `${prog.ratio * 100}%` }} />
+                      )}
+                      <div
+                        className="trend-progress-now"
+                        style={{ left: `clamp(8px, ${prog.ratio * 100}%, calc(100% - 8px))` }}
+                      />
+                    </div>
+                    <div className="trend-progress-ends num" aria-hidden="true">
+                      <span>시작 {profile.startWeightKg.toFixed(1)}</span>
+                      <span>목표 {profile.goalWeightKg.toFixed(1)}</span>
+                    </div>
+                  </div>
                 )}
-              </li>
-              <li>
-                <span className="muted">주간 속도</span>
-                {change ? (
-                  <span className="num trend-stat-value">{signed(change.perWeek, 2)}kg/주</span>
-                ) : (
-                  <span className="muted small">기록이 더 필요해요</span>
-                )}
-              </li>
-              {remaining !== null && goalKg !== undefined && (
-                <li>
-                  <span className="muted">
-                    목표 <span className="num">{goalKg.toFixed(1)}</span>kg까지
-                  </span>
-                  {reached ? (
-                    <span className="trend-stat-value trend-good">도달했어요</span>
-                  ) : (
-                    <span className="num trend-stat-value">{remaining.toFixed(1)}kg 남음</span>
-                  )}
-                </li>
-              )}
-            </ul>
-            {reached && <p className="small muted trend-projection">추세 체중이 목표 체중에 도달했어요.</p>}
-            {projected && (
-              <p className="small muted trend-projection">
-                주 <span className="num">{weeklyLossKg}</span>kg씩 줄이는 이 속도면 약{' '}
-                <span className="num">{monthDay(projected, asOf)}</span>쯤 목표에 도달해요. 어디까지나 예상이에요.
-              </p>
+                <p className="trend-hero-msg num" data-testid="trend-progress">
+                  {progressLine()}
+                </p>
+              </>
             )}
+            <p className="small trend-hero-hint">하루하루의 오르내림을 걸러 낸 체중의 흐름이에요.</p>
           </>
         ) : (
-          <p className="muted">아직 체중 기록이 없어요. 오늘 화면에서 체중을 기록해 보세요.</p>
+          <p className="trend-hero-msg">아직 체중 기록이 없어요. 오늘 화면에서 체중을 기록해 보세요.</p>
         )}
       </section>
+
+      <div className="segmented" role="group" aria-label="기간 선택">
+        {RANGES.map((r) => (
+          <button key={r.key} type="button" aria-pressed={r.key === rangeKey} onClick={() => setRangeKey(r.key)}>
+            {r.label}
+          </button>
+        ))}
+      </div>
 
       <section className="card" aria-labelledby="trend-chart-title">
         <h2 className="card-title" id="trend-chart-title">
@@ -186,7 +207,7 @@ export default function Trend() {
         {weights.length < 2 ? (
           <div className="trend-empty">
             <p>체중을 이틀 이상 기록하면 추세선이 나타나요.</p>
-            <p className="small muted">매일 조금씩 달라지는 숫자 대신, 실제로 어느 쪽으로 가고 있는지 보여 드려요.</p>
+            <p className="small muted">매일 조금씩 달라지는 숫자 대신, 어느 쪽으로 가고 있는지 보여 드려요.</p>
           </div>
         ) : visible.length < 2 ? (
           <div className="trend-empty">
@@ -197,7 +218,42 @@ export default function Trend() {
           <>
             <WeightChart points={visible} goalKg={goalKg} />
             {caption && <p className="small muted trend-caption">{caption}</p>}
+            {change && (
+              <dl className="trend-facts">
+                <div>
+                  <dt>{range.phrase} 변화</dt>
+                  <dd className="num" data-testid="trend-change">
+                    {signed(change.delta, 1)} kg
+                  </dd>
+                </div>
+                <div>
+                  <dt>주간 속도</dt>
+                  <dd className="num" data-testid="trend-rate">
+                    {signed(change.perWeek, 2)} kg/주
+                  </dd>
+                </div>
+              </dl>
+            )}
           </>
+        )}
+        {projected && (
+          <p className="small muted trend-projection" data-testid="trend-projection">
+            주 <span className="num">{weeklyLossKg}</span> kg씩 줄이는 지금 계획대로면{' '}
+            <span className="num">{monthDay(projected, asOf)}</span>쯤 목표 체중에 닿을 것 같아요. 어디까지나
+            예상이라 달라질 수 있어요.
+          </p>
+        )}
+        {breakUntil && (
+          <p className="small muted trend-projection" data-testid="trend-projection">
+            {breakUntil > asOf ? (
+              <>
+                지금은 쉬어 가는 유지 기간이에요. <span className="num">{monthDay(breakUntil, asOf)}</span>부터 감량을
+                다시 시작해요.
+              </>
+            ) : (
+              '쉬어 가는 유지 기간이 끝났어요. 다음 체크인에서 감량을 다시 시작할 수 있어요.'
+            )}
+          </p>
         )}
       </section>
 
@@ -209,13 +265,15 @@ export default function Trend() {
           <p className="muted">이 기간에는 식사 기록이 없어요.</p>
         ) : (
           <>
-            <IntakeChart data={intake.data} targetKcal={plan?.targetKcal} />
-            <p className="small muted trend-caption">
+            <IntakeChart data={intake.data} targetKcal={targetKcal} />
+            <p className="small muted trend-caption" data-testid="intake-caption">
               기록한 <span className="num">{intake.loggedDays}</span>일 평균{' '}
-              <span className="num">{intake.avg.toLocaleString('ko-KR')}</span>kcal
-              {plan && (
+              <span className="num">{fmtKcal(intake.avg)}</span> kcal
+              {targetKcal !== undefined && (
                 <>
-                  , 목표는 <span className="num">{plan.targetKcal.toLocaleString('ko-KR')}</span>kcal예요
+                  {' · '}범위 안 <span className="num">{intake.counts.in}</span>일 · 많음{' '}
+                  <span className="num">{intake.counts.over}</span>일 · 적음{' '}
+                  <span className="num">{intake.counts.under}</span>일
                 </>
               )}
               . 기록하지 않은 날은 막대가 없어요.
@@ -224,45 +282,57 @@ export default function Trend() {
         )}
       </section>
 
-      {plan && last && (
+      {profile && plan && last && (
         <section className="card" aria-labelledby="trend-plan-title">
-          <h2 className="card-title" id="trend-plan-title">
-            현재 계획
-          </h2>
-          <ul className="list trend-stats">
-            <li>
-              <span className="muted">하루 목표</span>
-              <span className="num trend-stat-value">{plan.targetKcal.toLocaleString('ko-KR')}kcal</span>
-            </li>
-            <li>
-              <span className="muted">추정 소비 칼로리</span>
-              <span className="num trend-stat-value">{plan.tdee.toLocaleString('ko-KR')}kcal</span>
-            </li>
-            <li>
-              <span className="muted">{last.kind === 'initial' ? '계획 시작일' : '마지막 체크인'}</span>
-              <span className="num">{formatKorean(last.date)}</span>
-            </li>
-            <li>
-              <span className="muted">다음 체크인</span>
-              {daysLeft !== null && daysLeft > 0 ? (
-                <span>
-                  <span className="num">{daysLeft}</span>일 뒤
-                </span>
-              ) : (
-                <span className="trend-stat-value">지금 할 수 있어요</span>
-              )}
-            </li>
-          </ul>
-          <Link
-            to="/checkin"
-            className={`btn btn--block trend-cta ${due ? 'btn--primary' : 'trend-cta--early'}`}
-          >
+          <div className="trend-plan-head">
+            <h2 className="card-title" id="trend-plan-title">
+              지금 계획
+            </h2>
+            {phase === 'maintain' ? (
+              <span className="chip chip--good" data-testid="phase-chip">
+                {profile.breakUntil ? `쉬어 가는 유지 기간 · ${formatShort(profile.breakUntil)}까지` : '유지 중'}
+              </span>
+            ) : (
+              <span className="chip chip--accent" data-testid="phase-chip">
+                감량 {weekOfPhase(profile, asOf)}주차
+              </span>
+            )}
+          </div>
+          <dl className="trend-facts trend-facts--plan">
+            <div>
+              <dt>{phase === 'maintain' ? '하루 유지 범위' : '하루 목표 범위'}</dt>
+              <dd className="num" data-testid="plan-range">
+                {fmtKcal(targetRange(plan.targetKcal).low)}~{fmtKcal(targetRange(plan.targetKcal).high)} kcal
+              </dd>
+            </div>
+            <div>
+              <dt>추정 소비 칼로리</dt>
+              <dd className="num">{fmtKcal(plan.tdee)} kcal</dd>
+            </div>
+            <div>
+              <dt>{last.kind === 'initial' ? '계획 시작일' : '마지막 체크인'}</dt>
+              <dd className="num">{formatKorean(last.date)}</dd>
+            </div>
+            <div>
+              <dt>다음 체크인</dt>
+              <dd data-testid="plan-next">
+                {daysLeft !== null && daysLeft > 0 ? (
+                  <>
+                    <span className="num">{daysLeft}</span>일 뒤
+                  </>
+                ) : (
+                  '지금 할 수 있어요'
+                )}
+              </dd>
+            </div>
+          </dl>
+          <Link to="/checkin" className={`btn btn--block trend-cta${due ? ' btn--primary btn--lg' : ''}`}>
             {due ? '주간 체크인 하기' : '미리 체크인하기'}
           </Link>
           <p className="small muted trend-cta-note">
             {due
-              ? '지난 기록을 바탕으로 목표 칼로리를 다시 맞춰요.'
-              : '체크인은 일주일에 한 번을 권장하지만, 원하면 미리 할 수 있어요.'}
+              ? '지난 한 주를 돌아보고 다음 한 주를 어떻게 갈지 정해요.'
+              : '체크인은 일주일에 한 번을 권하지만, 원하면 미리 해도 괜찮아요.'}
           </p>
         </section>
       )}

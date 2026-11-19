@@ -1,12 +1,15 @@
-.ob {
+/* main.tsx가 index.css를 화면 CSS보다 나중에 불러오므로, 공통 클래스를 덮어쓰는 규칙은 클래스를 겹쳐 우선순위를 올린다. */
+.page.ob {
   min-height: 100dvh;
-  gap: 20px;
+  /* 아래 여백은 붙박이 버튼 줄이 맡는다. */
+  padding-bottom: 0;
+  gap: 24px;
 }
 
 .ob-header {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   padding-top: 8px;
 }
 
@@ -28,9 +31,7 @@
 }
 
 .ob-title {
-  font-size: 1.5rem;
   outline: none;
-  word-break: keep-all;
 }
 
 .ob-body {
@@ -38,36 +39,91 @@
 }
 
 .ob-lead {
-  font-size: 1.0625rem;
-  word-break: keep-all;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.6;
 }
 
 .ob-desc {
-  margin-bottom: 16px;
-  word-break: keep-all;
+  margin-bottom: 18px;
 }
 
 .ob .banner {
   display: block;
-  word-break: keep-all;
 }
 
-.ob-result {
+/* ── 결과: 계획 패널 ── */
+
+.stack.ob-result {
+  gap: 20px;
+}
+
+.ob-plan .card-title {
+  margin-bottom: 8px;
+}
+
+/* 범위는 숫자가 두 개라 좁은 화면에서도 한 줄에 들어가게 조금 줄인다. */
+.big-num.ob-range {
+  font-size: clamp(1.875rem, 9.4vw, 2.5rem);
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 0;
 }
 
-.ob-result .card-title {
-  margin-bottom: 0;
+.ob-plan-msg {
+  margin-top: 12px;
+  font-size: 0.9375rem;
 }
 
-.ob-unit {
-  margin-left: 4px;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-2);
-  letter-spacing: 0;
+.ob-facts {
+  margin: 18px 0 0;
+}
+
+.ob-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--panel-line);
+}
+
+.ob-facts > div:last-child {
+  padding-bottom: 0;
+}
+
+.ob-facts dt {
+  font-size: 0.875rem;
+  color: var(--panel-text-2);
+}
+
+.ob-facts dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+/* ── 결과: 계획이 굴러가는 방식 ── */
+
+.ob-how {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ob-how > li {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.ob-how > li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.ob-how > li:last-child {
+  padding-bottom: 0;
 }
 
 .ob-actions {
@@ -77,7 +133,6 @@
   gap: 10px;
   margin: 0 calc(var(--gutter) * -1);
   padding: 12px var(--gutter) calc(env(safe-area-inset-bottom) + 12px);
-  margin-bottom: calc((env(safe-area-inset-bottom) + 24px) * -1);
   background: var(--bg);
   border-top: 1px solid var(--border);
 }

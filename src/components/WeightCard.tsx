@@ -61,10 +61,25 @@ export default function WeightCard({ date }: { date: DateStr }) {
   }
 
   return (
-    <section className="card" aria-labelledby="weight-card-title">
-      <h2 className="card-title" id="weight-card-title">
-        체중
-      </h2>
+    <section className="card weight" aria-labelledby="weight-card-title">
+      <div className="weight-head">
+        <h2 className="card-title" id="weight-card-title">
+          체중
+        </h2>
+        {!showForm && (
+          <button
+            type="button"
+            className="btn btn--ghost weight-edit"
+            onClick={() => {
+              setDraft(fmtKg(kg))
+              setEditing(true)
+            }}
+          >
+            <span aria-hidden="true">수정</span>
+            <span className="visually-hidden">체중 수정</span>
+          </button>
+        )}
+      </div>
 
       {showForm ? (
         <form onSubmit={onSubmit} noValidate>
@@ -97,7 +112,7 @@ export default function WeightCard({ date }: { date: DateStr }) {
             </button>
           </div>
           {error && (
-            <p className="field-error" id={`${inputId}-error`} role="alert" style={{ marginTop: 6 }}>
+            <p className="field-error weight-error" id={`${inputId}-error`} role="alert">
               {error}
             </p>
           )}
@@ -127,29 +142,20 @@ export default function WeightCard({ date }: { date: DateStr }) {
           )}
         </form>
       ) : (
-        <div className="row row--between">
-          <div>
-            <div className="weight-value num">
-              <span data-testid="weight-value">{fmtKg(kg)}</span>
-              <span className="unit">kg</span>
-            </div>
-            {trend !== null && (
-              <p className="small muted">
-                추세 <span className="num" data-testid="weight-trend">{fmtKg(trend)}</span> kg
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setDraft(fmtKg(kg))
-              setEditing(true)
-            }}
-          >
-            <span aria-hidden="true">수정</span>
-            <span className="visually-hidden">체중 수정</span>
-          </button>
+        <div className="weight-read">
+          <p className="weight-value">
+            <span data-testid="weight-value">{fmtKg(kg)}</span>
+            <span className="unit">kg</span>
+          </p>
+          {trend !== null && (
+            <p className="weight-trend">
+              <span className="muted">추세</span>{' '}
+              <b className="num" data-testid="weight-trend">
+                {fmtKg(trend)}
+              </b>{' '}
+              kg
+            </p>
+          )}
         </div>
       )}
     </section>

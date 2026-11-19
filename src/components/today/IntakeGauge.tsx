@@ -21,9 +21,11 @@ export default function IntakeGauge({ eaten, targetKcal }: { eaten: number; targ
         {eaten > 0 && <div className="gauge-fill" style={{ width: pct(eaten) }} />}
         {eaten > 0 && <div className="gauge-dot" style={{ left: pct(eaten) }} />}
       </div>
+      {/* 범위가 좁아 양 끝 숫자를 따로 두면 겹치므로 띠 가운데 아래에 한 번만 적는다. */}
       <div className="gauge-scale num" aria-hidden="true">
-        <span style={{ left: pct(low) }}>{fmtKcal(low)}</span>
-        <span style={{ left: pct(high) }}>{fmtKcal(high)}</span>
+        <span style={{ left: `clamp(56px, ${pct(targetKcal)}, calc(100% - 56px))` }}>
+          {fmtKcal(low)}~{fmtKcal(high)}
+        </span>
       </div>
     </div>
   )

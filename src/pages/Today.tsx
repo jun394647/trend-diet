@@ -54,7 +54,13 @@ export default function Today() {
   // 보고 있는 날이 속한 주. 이번 주라면 오늘까지만 센다.
   const week = useMemo(() => {
     const end = addDays(weekStart(date), 6)
-    return weekSummary({ meals, weights, targetKcal: target, asOf: end > todayStr ? todayStr : end })
+    return weekSummary({
+      meals,
+      weights,
+      targetKcal: target,
+      asOf: end > todayStr ? todayStr : end,
+      inProgress: todayStr,
+    })
   }, [meals, weights, target, date, todayStr])
   const isThisWeek = weekStart(date) === weekStart(todayStr)
   const maintaining = profile !== null && phaseOf(profile) === 'maintain'
@@ -225,7 +231,8 @@ export default function Today() {
               '이 주에는 식사 기록이 아직 없어요.'
             ) : (
               <>
-                기록한 {week.mealDays}일 평균 <b className="num">{fmtKcal(week.avgKcal)}</b> kcal로{' '}
+                {week.avgDays < week.mealDays ? '오늘을 뺀 ' : '기록한 '}
+                {week.avgDays}일 평균 <b className="num">{fmtKcal(week.avgKcal)}</b> kcal로{' '}
                 {week.avgState === 'in' && `${rangeName} 안이에요.`}
                 {week.avgState === 'over' && `${rangeName}보다 조금 많아요.`}
                 {week.avgState === 'under' && `${rangeName}보다 적어요. 너무 적게 먹으면 오래 가기 어려워요.`}

@@ -1,3 +1,9 @@
+/* 설정 화면의 다른 구획 제목과 같은 크기. */
+.acc-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
 .acc-email {
   font-weight: 700;
   overflow-wrap: anywhere;
@@ -7,4 +13,11 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+/* 고를 수 있는 길 하나: 버튼과 그 버튼이 하는 일의 설명. */
+.acc-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }

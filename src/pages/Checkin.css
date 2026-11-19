@@ -1,14 +1,17 @@
-.checkin-page .visually-hidden {
+.checkin-sr {
   position: absolute;
   width: 1px;
   height: 1px;
+  margin: -1px;
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
 }
 
-.checkin-link {
-  text-decoration: none;
+.checkin-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .checkin-note {
@@ -16,47 +19,82 @@
   margin: 0;
 }
 
-.checkin-stats > li {
-  min-height: 44px;
+/* ── 요약 패널 ── */
+
+.checkin-hero .card-title {
+  margin-bottom: 6px;
+}
+
+.checkin-unit {
+  font-family: var(--font-body);
   font-size: 0.9375rem;
-}
-
-.checkin-value {
   font-weight: 600;
+  letter-spacing: 0;
+  margin-left: 4px;
+  color: var(--panel-text-2);
+}
+
+.checkin-hero-change {
+  margin-top: 10px;
+  font-size: 0.9375rem;
+  color: var(--panel-text);
+}
+
+.checkin-hero-facts {
+  margin: 18px 0 0;
+  border-top: 1px solid var(--panel-line);
+}
+
+.checkin-hero-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  padding-top: 12px;
+  font-size: 0.875rem;
+}
+
+.checkin-hero-facts dt {
+  color: var(--panel-text-2);
+}
+
+.checkin-hero-facts dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--panel-text);
   text-align: right;
-  white-space: nowrap;
 }
 
-.checkin-sub {
-  display: block;
-}
-
-.checkin-foot {
-  margin-top: 8px;
-}
+/* ── 추정 소비 칼로리 ── */
 
 .checkin-change {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
+  font-family: var(--font-display);
   font-size: 1.25rem;
   font-weight: 600;
 }
 
 .checkin-new {
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .checkin-arrow {
   color: var(--text-2);
 }
 
+.checkin-change-unit {
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+}
+
 .checkin-explain {
   margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -67,26 +105,118 @@ p.checkin-explain {
 }
 
 .checkin-needs > li {
-  padding: 8px 0;
+  padding: 10px 0;
 }
 
 .checkin-needs > li:first-child {
   border-top: 1px solid var(--border);
 }
 
-.checkin-hero {
-  margin: 4px 0;
-  color: var(--accent);
+/* ── 선택지 ── */
+
+.checkin-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.checkin-unit {
-  font-size: 1rem;
+.checkin-option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 56px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+/* 고른 줄은 색뿐 아니라 굵은 테두리와 채워진 동그라미로도 알린다. */
+.checkin-option.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 실제 라디오는 줄 전체를 덮어 어디를 눌러도 고를 수 있게 하고, 모양은 옆의 동그라미가 맡는다. */
+.checkin-option > input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.checkin-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.checkin-option-mark {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 2px solid var(--text-2);
+  background: var(--surface);
+}
+
+.checkin-option.is-selected .checkin-option-mark {
+  border-color: var(--accent);
+  background: radial-gradient(circle, var(--accent) 0 5px, var(--surface) 6px);
+}
+
+.checkin-option-body {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.checkin-option-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.checkin-option-title {
+  font-weight: 700;
+}
+
+.checkin-option-target {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
   font-weight: 600;
-  color: var(--text-2);
-  margin-left: 4px;
-  letter-spacing: 0;
+}
+
+.checkin-option-target > .small {
+  font-weight: 400;
+}
+
+.checkin-option-why {
+  display: block;
+}
+
+.checkin-option.is-selected .checkin-option-why,
+.checkin-option.is-selected .checkin-option-target > .small {
+  color: var(--text);
 }
 
 .checkin-actions-note {
   text-align: center;
+}
+
+/* 고른 줄의 바탕이 칩 바탕과 같은 색이라, 칩이 묻히지 않게 바꾼다. */
+.checkin-option.is-selected .chip {
+  background: var(--surface);
 }

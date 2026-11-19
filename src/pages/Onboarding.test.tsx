@@ -8,6 +8,8 @@ const birthYear = String(new Date().getFullYear() - 30)
 const type = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } })
 const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
+const pickPace = (name: string | RegExp) => fireEvent.click(screen.getByRole('radio', { name }))
+const fmt = (n: number) => n.toLocaleString('ko-KR')
 
 function fillBody(weight = '80') {
   click('남성')
@@ -41,6 +43,9 @@ describe('Onboarding', () => {
     click('다음')
 
     type('목표 체중', '72')
+    // 보통(0.5kg)이 미리 골라져 있고, 그 속도의 하루 적자를 알려 준다.
+    expect(screen.getByRole('radio', { name: /보통/ })).toBeChecked()
+    expect(screen.getByTestId('pace-deficit')).toHaveTextContent('약 550kcal 적게')
     click('다음')
 
     // 결과 미리보기
@@ -48,6 +53,9 @@ describe('Onboarding', () => {
     expect(screen.getByTestId('tdee-kcal').textContent).toMatch(/kcal/)
     expect(screen.getByText(/의학적 조언이 아니에요/)).toBeInTheDocument()
     expect(screen.getByText('목표 체중 도달 예상')).toBeInTheDocument()
+    expect(screen.getByText(/한 주 평균으로 봐요/)).toBeInTheDocument()
+    expect(screen.getByText(/10주쯤 이어지면 2주 쉬어 가기/)).toBeInTheDocument()
+    const shown = screen.getByTestId('target-range').textContent
 
     click('이 계획으로 시작하기')
 
@@ -61,12 +69,42 @@ describe('Onboarding', () => {
       goalWeightKg: 72,
       activityFactor: 1.55,
       weeklyLossKg: 0.5,
+      phase: 'lose',
+      phaseStartedAt: today(),
+      breakUntil: null,
     })
     expect(s.checkins).toHaveLength(1)
     expect(s.checkins[0].kind).toBe('initial')
     expect(s.weights).toEqual([{ date: today(), kg: 80 }])
     // 화면에 보여 준 목표와 저장된 목표가 같아야 한다.
-    expect(s.checkins[0].targetKcal).toBeGreaterThan(1000)
+    const target = s.checkins[0].targetKcal
+    expect(target).toBeGreaterThan(1000)
+    expect(target).toBeLessThan(s.checkins[0].estimatedTdee)
+    expect(shown).toBe(`${fmt(target - 100)}~${fmt(target + 100)}`)
+  })
+
+  it('유지를 고르면 유지 단계로 저장하고 목표를 소비 칼로리에 맞춘다', async () => {
+    render(<Onboarding />)
+    click('시작하기')
+    fillBody()
+    click('다음')
+    click('다음')
+
+    type('목표 체중', '80')
+    pickPace('유지')
+    expect(screen.getByTestId('pace-deficit')).toHaveTextContent('쓰는 만큼 먹어서')
+    click('다음')
+
+    expect(screen.getByText('하루 유지 범위')).toBeInTheDocument()
+    expect(screen.queryByText(/쉬어 가기/)).not.toBeInTheDocument()
+    expect(screen.queryByText('목표 체중 도달 예상')).not.toBeInTheDocument()
+
+    click('이 계획으로 시작하기')
+
+    await waitFor(() => expect(useStore.getState().profile).not.toBeNull())
+    const s = useStore.getState()
+    expect(s.profile).toMatchObject({ weeklyLossKg: 0, phase: 'maintain', phaseStartedAt: today(), breakUntil: null })
+    expect(s.checkins[0].targetKcal).toBe(Math.round(s.checkins[0].estimatedTdee / 10) * 10)
   })
 
   it('범위를 벗어난 값이 있으면 오류를 보여 주고 다음으로 넘어가지 않는다', () => {
@@ -100,7 +138,7 @@ describe('Onboarding', () => {
     click('다음')
     expect(screen.getByText(/목표 체중이 현재 체중\(70kg\)보다 높아요/)).toBeInTheDocument()
 
-    click('유지')
+    pickPace('유지')
     click('다음')
     expect(screen.getByRole('heading', { name: '이렇게 시작해요' })).toBeInTheDocument()
   })
@@ -117,7 +155,8 @@ describe('Onboarding', () => {
     click('다음')
     click('다음')
     type('목표 체중', '55')
-    click('0.75kg')
+    pickPace(/빠르게/)
+    expect(screen.getByTestId('pace-deficit')).toHaveTextContent('약 830kcal 적게')
     click('다음')
     // 60kg의 1%는 0.6kg
     expect(screen.getByText(/체중의 1%\(0.6kg\)까지만/)).toBeInTheDocument()

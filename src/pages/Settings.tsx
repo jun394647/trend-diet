@@ -1,16 +1,19 @@
 import { useMemo, useRef, useState, type ChangeEvent } from 'react'
 import AccountPanel from '../components/AccountPanel'
-import ProfileForm, {
+import ProfileForm from '../components/ProfileForm'
+import {
   draftFromProfile,
   draftToProfileFields,
+  phasePatchForPace,
   validateDraft,
   type ProfileDraft,
-} from '../components/ProfileForm'
-import { parseDate, today } from '../lib/date'
+} from '../components/profileFormModel'
+import { formatShort, parseDate, today } from '../lib/date'
 import { currentPlan } from '../lib/plan'
+import { phaseOf, targetRange, weekOfPhase } from '../lib/sustain'
 import { useStore } from '../store'
 import { useSync } from '../sync/store'
-import type { Profile } from '../types'
+import type { Phase, Profile } from '../types'
 import './Settings.css'
 
 type Notice = { kind: 'ok' | 'error'; text: string }
@@ -58,6 +61,160 @@ function downloadText(text: string, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+const kcal = (n: number) => n.toLocaleString('ko-KR')
+
+function rangeText(targetKcal: number): string {
+  const { low, high } = targetRange(targetKcal)
+  return `${kcal(low)}~${kcal(high)}kcal`
+}
+
+const rangeNameOf = (phase: Phase) => (phase === 'maintain' ? '하루 유지 범위' : '하루 목표 범위')
+
+/** 지금 단계와 하루 목표 범위를 보여 주고, 감량과 유지 사이를 직접 바꾼다. */
+function PhaseSection({ profile, onChanged }: { profile: Profile; onChanged: () => void }) {
+  const checkins = useStore((s) => s.checkins)
+  const latestWeightKg = useStore((s) =>
+    s.weights.length > 0 ? s.weights[s.weights.length - 1].kg : null,
+  )
+  const [confirming, setConfirming] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState<Notice | null>(null)
+
+  const plan = useMemo(() => currentPlan(checkins), [checkins])
+  const date = today()
+  const phase = phaseOf(profile)
+  const maintaining = phase === 'maintain'
+  const currentWeightKg = latestWeightKg ?? profile.startWeightKg
+  const atGoal = currentWeightKg <= profile.goalWeightKg
+  const blocked = maintaining && atGoal
+  const range = plan ? targetRange(plan.targetKcal) : null
+
+  const change = async () => {
+    setSaving(true)
+    setNotice(null)
+    const next: Profile = maintaining
+      ? {
+          ...profile,
+          phase: 'lose',
+          phaseStartedAt: date,
+          breakUntil: null,
+          weeklyLossKg: profile.weeklyLossKg > 0 ? profile.weeklyLossKg : 0.5,
+        }
+      : { ...profile, phase: 'maintain', phaseStartedAt: date, breakUntil: null }
+    try {
+      await useStore.getState().updateProfile(next)
+      const after = currentPlan(useStore.getState().checkins)
+      const nextPhase = phaseOf(next)
+      const done = nextPhase === 'maintain' ? '유지 기간으로 바꿨어요.' : '감량을 다시 시작했어요.'
+      setNotice({
+        kind: 'ok',
+        text: after ? `${done} ${rangeNameOf(nextPhase)}는 ${rangeText(after.targetKcal)}예요.` : done,
+      })
+      setConfirming(false)
+      onChanged()
+    } catch {
+      setNotice({ kind: 'error', text: '바꾸지 못했어요. 잠시 뒤에 다시 시도해 주세요.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="panel st-phase" aria-labelledby="st-phase-title">
+      <div className="st-phase-head">
+        <h2 className="card-title" id="st-phase-title">
+          지금 단계
+        </h2>
+        {maintaining ? (
+          <span className="chip chip--good" data-testid="st-phase-chip">
+            {profile.breakUntil ? `쉬어 가는 유지 기간 · ${formatShort(profile.breakUntil)}까지` : '유지 중'}
+          </span>
+        ) : (
+          <span className="chip chip--accent" data-testid="st-phase-chip">
+            감량 {weekOfPhase(profile, date)}주차
+          </span>
+        )}
+      </div>
+
+      {range && (
+        <div>
+          <p className="st-phase-label">{rangeNameOf(phase)}</p>
+          <p className="big-num st-phase-range">
+            <span data-testid="st-phase-range">
+              {kcal(range.low)}~{kcal(range.high)}
+            </span>
+            <span className="unit">kcal</span>
+          </p>
+        </div>
+      )}
+
+      <p className="st-phase-desc">
+        {maintaining
+          ? '쓰는 만큼 먹으면서 지금 체중을 지키는 기간이에요.'
+          : `일주일에 ${profile.weeklyLossKg}kg씩 빼는 속도에 맞춘 범위예요.`}
+      </p>
+
+      {notice &&
+        (notice.kind === 'error' ? (
+          <p className="st-phase-notice" role="alert">
+            {notice.text}
+          </p>
+        ) : (
+          <p className="st-phase-notice" role="status">
+            {notice.text}
+          </p>
+        ))}
+
+      {confirming ? (
+        <div className="st-phase-confirm" role="group" aria-label="단계 바꾸기 확인">
+          <p>
+            {maintaining
+              ? `감량 기간을 오늘부터 다시 세고, 하루 목표 범위를 일주일에 ${
+                  profile.weeklyLossKg > 0 ? profile.weeklyLossKg : 0.5
+                }kg 빼는 속도에 맞춰 낮춰요.`
+              : '하루 목표 범위를 쓰는 만큼 먹는 양으로 올려요. 감량은 여기서 언제든 다시 시작할 수 있어요.'}
+          </p>
+          <div className="st-confirm-actions">
+            <button type="button" className="btn st-phase-btn" onClick={() => setConfirming(false)} disabled={saving}>
+              취소
+            </button>
+            <button
+              type="button"
+              className="btn st-phase-btn st-phase-btn--solid"
+              onClick={() => void change()}
+              disabled={saving}
+            >
+              {saving ? '바꾸는 중…' : maintaining ? '감량 시작하기' : '유지로 바꾸기'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="btn btn--block st-phase-btn"
+            onClick={() => {
+              setNotice(null)
+              setConfirming(true)
+            }}
+            disabled={blocked}
+            aria-describedby={blocked ? 'st-phase-blocked' : undefined}
+          >
+            {maintaining ? '감량 다시 시작하기' : '유지 기간으로 바꾸기'}
+          </button>
+          {blocked && (
+            <p className="st-phase-hint" id="st-phase-blocked">
+              지금 체중({currentWeightKg}kg)이 목표 체중({profile.goalWeightKg}kg)과 같거나 더 낮아서
+              감량을 다시 시작할 수 없어요. 더 빼고 싶다면 아래 내 정보에서 목표 체중을 먼저 낮춰
+              주세요.
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
 function ProfileCard({ profile }: { profile: Profile }) {
   const latestWeightKg = useStore((s) =>
     s.weights.length > 0 ? s.weights[s.weights.length - 1].kg : null,
@@ -73,6 +230,8 @@ function ProfileCard({ profile }: { profile: Profile }) {
     () => validateDraft(draft, { year: parseDate(date).getFullYear(), currentWeightKg }),
     [draft, date, currentWeightKg],
   )
+  // 쉬어 가는 동안에는 고른 감량 속도가 목표에 반영되지 않는다.
+  const pacePaused = phaseOf(profile) === 'maintain' && draft.weeklyLossKg > 0 && profile.weeklyLossKg > 0
 
   const save = async () => {
     setNotice(null)
@@ -82,12 +241,15 @@ function ProfileCard({ profile }: { profile: Profile }) {
     }
     setSaving(true)
     try {
-      await useStore.getState().updateProfile({ ...profile, ...draftToProfileFields(draft) })
+      const fields = draftToProfileFields(draft)
+      // 단계는 속도를 유지로 바꾸거나 유지에서 감량 속도로 바꿀 때만 달라진다.
+      const next: Profile = { ...profile, ...fields, ...phasePatchForPace(profile, fields.weeklyLossKg, date) }
+      await useStore.getState().updateProfile(next)
       const plan = currentPlan(useStore.getState().checkins)
       setNotice({
         kind: 'ok',
         text: plan
-          ? `저장했어요. 하루 목표 칼로리는 ${plan.targetKcal.toLocaleString('ko-KR')}kcal예요.`
+          ? `저장했어요. ${rangeNameOf(phaseOf(next))}는 ${rangeText(plan.targetKcal)}예요.`
           : '저장했어요.',
       })
       setAttempted(false)
@@ -100,7 +262,7 @@ function ProfileCard({ profile }: { profile: Profile }) {
 
   return (
     <section className="card stack" aria-labelledby="st-profile-title">
-      <h2 className="card-title st-card-title" id="st-profile-title">
+      <h2 className="st-title" id="st-profile-title">
         내 정보
       </h2>
       <ProfileForm
@@ -114,16 +276,19 @@ function ProfileCard({ profile }: { profile: Profile }) {
         hideWeight
         idPrefix="st"
       />
+      {pacePaused && (
+        <p className="muted small">
+          지금은 유지 기간이라, 고른 속도는 감량을 다시 시작할 때부터 적용돼요.
+        </p>
+      )}
       <p className="muted small">
-        시작 체중은 {profile.startWeightKg}kg이에요. 체중은 오늘 화면에서 기록해요.
-      </p>
-      <p className="muted small">
-        저장하면 지금까지 계산한 소비 칼로리는 그대로 두고 목표 칼로리만 다시 계산해요.
+        시작 체중은 {profile.startWeightKg}kg이에요. 체중은 오늘 화면에서 기록해요. 저장하면 지금까지
+        계산한 소비 칼로리는 그대로 두고 하루 목표 범위만 다시 계산해요.
       </p>
       <NoticeBanner notice={notice} />
       <button
         type="button"
-        className="btn btn--primary btn--block"
+        className="btn btn--primary btn--block btn--lg"
         onClick={() => void save()}
         disabled={saving}
       >
@@ -140,7 +305,8 @@ export default function Settings() {
   const [backupNotice, setBackupNotice] = useState<Notice | null>(null)
   const [resetNotice, setResetNotice] = useState<Notice | null>(null)
   const [busy, setBusy] = useState(false)
-  // 가져오기로 프로필이 바뀌면 입력 폼을 새 값으로 다시 만든다.
+  const [confirmingReset, setConfirmingReset] = useState(false)
+  // 가져오기나 단계 바꾸기로 프로필이 바뀌면 입력 폼을 새 값으로 다시 만든다.
   const [profileVersion, setProfileVersion] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -189,12 +355,6 @@ export default function Settings() {
   }
 
   const handleReset = async () => {
-    const ok = window.confirm(
-      synced
-        ? '체중, 식사 기록과 내 정보를 이 기기와 계정에서 모두 삭제해요. 다른 기기에서도 사라지고 되돌릴 수 없으니 먼저 백업 파일을 내보내는 것을 권해요. 정말 삭제할까요?'
-        : '체중, 식사 기록과 내 정보를 모두 삭제해요. 삭제하면 되돌릴 수 없으니 먼저 백업 파일을 내보내는 것을 권해요. 정말 삭제할까요?',
-    )
-    if (!ok) return
     setResetNotice(null)
     setBusy(true)
     try {
@@ -213,10 +373,12 @@ export default function Settings() {
 
       <AccountPanel />
 
+      {profile && <PhaseSection profile={profile} onChanged={() => setProfileVersion((v) => v + 1)} />}
+
       {profile && <ProfileCard key={profileVersion} profile={profile} />}
 
       <section className="card stack" aria-labelledby="st-backup-title">
-        <h2 className="card-title st-card-title" id="st-backup-title">
+        <h2 className="st-title" id="st-backup-title">
           백업
         </h2>
         <p className="small">
@@ -229,7 +391,7 @@ export default function Settings() {
         </p>
         <button
           type="button"
-          className="btn btn--primary btn--block"
+          className="btn btn--block"
           onClick={() => void handleExport()}
           disabled={busy}
         >
@@ -257,7 +419,7 @@ export default function Settings() {
       </section>
 
       <section className="card stack" aria-labelledby="st-reset-title">
-        <h2 className="card-title st-card-title" id="st-reset-title">
+        <h2 className="st-title" id="st-reset-title">
           초기화
         </h2>
         <p className="small">
@@ -265,18 +427,39 @@ export default function Settings() {
           {synced && ' 계정에 저장된 기록도 함께 지워져요.'} 삭제한 뒤에는 되돌릴 수 없어요.
         </p>
         <NoticeBanner notice={resetNotice} />
-        <button
-          type="button"
-          className="btn btn--danger btn--block"
-          onClick={() => void handleReset()}
-          disabled={busy}
-        >
-          모든 데이터 삭제
-        </button>
+        {confirmingReset ? (
+          <div className="st-confirm" role="group" aria-label="모든 데이터 삭제 확인">
+            <p className="small">
+              {synced
+                ? '이 기기와 계정에서 모두 삭제해요. 다른 기기에서도 사라지고 되돌릴 수 없어요. 남겨 둘 기록이 있다면 먼저 백업 파일을 내보내 주세요.'
+                : '삭제하면 되돌릴 수 없어요. 남겨 둘 기록이 있다면 먼저 백업 파일을 내보내 주세요.'}
+            </p>
+            <div className="st-confirm-actions">
+              <button type="button" className="btn" onClick={() => setConfirmingReset(false)} disabled={busy}>
+                취소
+              </button>
+              <button type="button" className="btn btn--danger" onClick={() => void handleReset()} disabled={busy}>
+                {busy ? '삭제하는 중…' : '모두 삭제'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="btn btn--ghost st-reset-open"
+            onClick={() => {
+              setResetNotice(null)
+              setConfirmingReset(true)
+            }}
+            disabled={busy}
+          >
+            모든 데이터 삭제
+          </button>
+        )}
       </section>
 
       <section className="card stack" aria-labelledby="st-about-title">
-        <h2 className="card-title st-card-title" id="st-about-title">
+        <h2 className="st-title" id="st-about-title">
           앱 정보
         </h2>
         <ul className="st-notes small">

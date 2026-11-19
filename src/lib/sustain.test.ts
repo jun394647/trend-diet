@@ -91,6 +91,26 @@ describe('주간 요약', () => {
     expect(s.avgState).toBe('none')
   })
 
+  it('아직 다 먹지 않은 오늘은 평균에서 뺀다', () => {
+    const args = {
+      meals: [meal('2026-01-05', 2000), meal('2026-01-06', 2100), meal('2026-01-07', 600)],
+      weights: [],
+      targetKcal: 2000,
+      asOf: '2026-01-07',
+    }
+    expect(weekSummary(args).avgKcal).toBe(1567)
+    const s = weekSummary({ ...args, inProgress: '2026-01-07' })
+    expect(s.avgKcal).toBe(2050)
+    expect(s.avgDays).toBe(2)
+    expect(s.mealDays).toBe(3)
+    // 오늘이 이미 범위에 들었으면 평균에 넣는다.
+    const full = weekSummary({ ...args, meals: [...args.meals, meal('2026-01-07', 1400, 1)], inProgress: '2026-01-07' })
+    expect(full.avgDays).toBe(3)
+    // 오늘 기록뿐이면 그대로 쓴다.
+    const only = weekSummary({ ...args, meals: [meal('2026-01-07', 600)], inProgress: '2026-01-07' })
+    expect(only.avgKcal).toBe(600)
+  })
+
   it('하루에 여러 끼는 합산한다', () => {
     const s = weekSummary({
       meals: [meal('2026-01-05', 900, 0), meal('2026-01-05', 1100, 1)],

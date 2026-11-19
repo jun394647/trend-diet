@@ -1,17 +1,111 @@
-.st-card-title {
-  margin-bottom: 0;
-  font-size: 1rem;
-  color: var(--text);
+/* main.tsx가 index.css를 화면 CSS보다 나중에 불러오므로, 공통 클래스를 덮어쓰는 규칙은 클래스를 겹쳐 우선순위를 올린다. */
+
+/* 구획 제목. 설정은 구획이 길어서 작은 머리글 대신 본문보다 큰 제목을 쓴다. */
+.st-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
 }
 
-.st .small {
-  word-break: keep-all;
-}
-
-.st-notice {
+.banner.st-notice {
   display: block;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
+}
+
+/* ── 지금 단계 패널 ── */
+
+.st-phase {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.st-phase-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.st-phase-head .card-title {
+  margin-bottom: 0;
+}
+
+.st-phase-label {
+  font-size: 0.875rem;
+  color: var(--panel-text-2);
+  margin-bottom: 6px;
+}
+
+.big-num.st-phase-range {
+  font-size: clamp(1.875rem, 9.4vw, 2.5rem);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.st-phase-desc,
+.st-phase-confirm > p {
+  font-size: 0.9375rem;
+}
+
+.st-phase-hint {
+  font-size: 0.8125rem;
+  color: var(--panel-text-2);
+}
+
+.st-phase-notice {
+  padding: 10px 0 0;
+  border-top: 1px solid var(--panel-line);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.st-phase-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--panel-line);
+}
+
+/* 패널 위의 버튼은 패널 색을 따른다. */
+.st-phase .st-phase-btn {
+  background: transparent;
+  border-color: var(--panel-text-2);
+  color: var(--panel-text);
+}
+
+.st-phase .st-phase-btn--solid {
+  background: var(--panel-text);
+  border-color: var(--panel-text);
+  color: var(--panel);
+}
+
+.st-phase .st-phase-btn:focus-visible {
+  outline-color: var(--panel-text);
+}
+
+/* ── 확인 줄 ── */
+
+.st-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.st-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* 삭제는 확인 줄이 열리기 전까지 글자만 보인다. */
+.btn.st-reset-open {
+  align-self: flex-start;
+  padding: 0;
+  color: var(--danger);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* 파일 선택 칸은 버튼으로 열기 때문에 화면에서는 숨긴다. */
@@ -28,11 +122,12 @@
 }
 
 .st-notes {
+  list-style: none;
   margin: 0;
-  padding-left: 18px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .st-notes ul {

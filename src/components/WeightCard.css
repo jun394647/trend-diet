@@ -1,3 +1,46 @@
+/* main.tsx가 index.css를 화면 CSS보다 나중에 불러오므로, 공통 클래스를 덮어쓰는 규칙은 클래스를 겹쳐 우선순위를 올린다. */
+.weight-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 28px;
+  margin-bottom: 10px;
+}
+
+.weight-head .card-title {
+  margin-bottom: 0;
+}
+
+/* 누르는 넓이는 44px로 두고, 줄 간격은 벌어지지 않게 위아래로 당긴다. */
+.btn.weight-edit {
+  min-height: 44px;
+  margin: -8px -12px -8px 0;
+  padding: 0 12px;
+  font-size: 0.9375rem;
+}
+
+.weight-read {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.weight-value {
+  font-family: var(--font-display);
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.weight-trend {
+  font-size: 0.9375rem;
+}
+
 .weight-form {
   display: flex;
   gap: 8px;
@@ -16,7 +59,7 @@
 
 .weight-input-wrap .weight-suffix {
   position: absolute;
-  right: 12px;
+  right: 14px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-2);
@@ -24,11 +67,12 @@
   pointer-events: none;
 }
 
-.weight-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+.weight-form .btn {
+  min-height: 48px;
+}
+
+.weight-error {
+  margin-top: 6px;
 }
 
 .weight-actions {

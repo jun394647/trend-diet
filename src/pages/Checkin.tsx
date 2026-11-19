@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { diffDays, today } from '../lib/date'
-import { buildCheckinProposal } from '../lib/plan'
+import { diffDays, formatKorean, today } from '../lib/date'
 import { isCheckinDue, latestCheckin } from '../lib/selectors'
+import { buildCheckinReview, targetRange } from '../lib/sustain'
+import type { CheckinOption, CheckinOptionId, CheckinReview } from '../lib/sustain'
 import { BLEND, MIN_LOGGED_DAYS, MIN_SPAN_DAYS, MIN_WEIGH_INS, WINDOW_DAYS } from '../lib/tdee'
 import { useStore } from '../store'
 import './Checkin.css'
@@ -18,8 +19,59 @@ function signed(n: number, digits: number): string {
 
 function signedKcal(n: number): string {
   const r = Math.round(n)
-  if (r === 0) return '변화 없음'
-  return `${r > 0 ? '+' : '−'}${Math.abs(r).toLocaleString('ko-KR')}kcal`
+  return `${r > 0 ? '+' : '−'}${Math.abs(r).toLocaleString('ko-KR')} kcal`
+}
+
+interface OptionCopy {
+  title: string
+  why: string
+  /** 이 선택지를 골랐을 때 확인 버튼에 쓰는 말. */
+  action: string
+}
+
+function optionCopy(option: CheckinOption, review: CheckinReview): OptionCopy {
+  switch (option.id) {
+    case 'maintain':
+      return {
+        title: '유지로 넘어가기',
+        why: '목표 체중에 닿았어요. 이제는 쓰는 만큼 먹으면서 지금 체중을 지켜요. 뺀 체중이 오래 가는 건 이 기간 덕분이에요.',
+        action: '유지로 넘어가기',
+      }
+    case 'break': {
+      const until = option.profilePatch?.breakUntil
+      return {
+        title: '2주 쉬어 가기',
+        why: `감량을 ${review.weekOfPhase}주째 이어 왔어요. ${until ? `${formatKorean(until)}까지 ` : ''}2주 동안 쓰는 만큼 먹고, 그 뒤에 다시 시작해요. 적게 먹는 기간이 길어질수록 이어 가기 어려워져요.`,
+        action: '2주 유지 기간 시작하기',
+      }
+    }
+    case 'resume':
+      return {
+        title: '감량 다시 시작하기',
+        why: `쉬어 가는 기간이 끝났어요. 전과 같은 주 ${option.weeklyLossKg} kg 속도로 다시 시작해요.`,
+        action: '감량 다시 시작하기',
+      }
+    case 'slower': {
+      const over = review.recent.avgKcal !== null ? review.recent.avgKcal - review.previous.targetKcal : null
+      return {
+        title: `주 ${option.weeklyLossKg} kg으로 늦추기`,
+        why: `${over !== null && over > 0 ? `최근 평균 섭취가 목표보다 ${kcal(over)} kcal 많았어요. ` : ''}더 참는 대신 속도를 늦춰서 목표를 올려요. 빠르지만 못 지키는 속도보다 이어 갈 수 있는 속도가 나아요.`,
+        action: `주 ${option.weeklyLossKg} kg으로 늦추기`,
+      }
+    }
+    case 'adaptive':
+      return {
+        title: '새 추정치에 맞추기',
+        why: '계획은 그대로 두고, 새로 추정한 소비 칼로리에 맞춰 목표만 고쳐요.',
+        action: '새 목표로 바꾸기',
+      }
+    case 'keep':
+      return {
+        title: '이번 주는 그대로',
+        why: '아무것도 바꾸지 않고 지금 목표로 한 주 더 가요.',
+        action: '이대로 유지하기',
+      }
+  }
 }
 
 export default function Checkin() {
@@ -27,126 +79,125 @@ export default function Checkin() {
   const weights = useStore((s) => s.weights)
   const meals = useStore((s) => s.meals)
   const checkins = useStore((s) => s.checkins)
-  const saveCheckin = useStore((s) => s.saveCheckin)
+  const applyCheckinOption = useStore((s) => s.applyCheckinOption)
   const navigate = useNavigate()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
+  const [pickedId, setPickedId] = useState<CheckinOptionId | null>(null)
 
   const asOf = today()
-  const proposal = useMemo(
-    () => (profile ? buildCheckinProposal({ profile, weights, meals, checkins, asOf }) : null),
+  const review = useMemo(
+    () => (profile ? buildCheckinReview({ profile, weights, meals, checkins, asOf }) : null),
     [profile, weights, meals, checkins, asOf],
   )
   const last = useMemo(() => latestCheckin(checkins), [checkins])
+  const due = useMemo(() => isCheckinDue(checkins, asOf), [checkins, asOf])
 
-  if (!proposal || !last) {
+  if (!review || !last) {
     return (
       <main className="page">
         <h1 className="page-title">주간 체크인</h1>
-        <div className="card stack">
-          <p>아직 체크인할 계획이 없어요. 먼저 기본 정보를 입력해 주세요.</p>
-          <Link to="/" className="btn btn--primary btn--block checkin-link">
-            홈으로 가기
-          </Link>
-        </div>
+        <p>아직 체크인할 계획이 없어요. 먼저 기본 정보를 입력해 주세요.</p>
+        <Link to="/" className="btn btn--primary btn--block btn--lg">
+          홈으로 가기
+        </Link>
       </main>
     )
   }
 
-  const { previous, estimate, target, trendKg, trendChangeKg } = proposal
-  const due = isCheckinDue(checkins, asOf)
+  const { previous, estimate, trendKg, trendChangeKg, recent, options } = review
+  const selected = options.find((o) => o.id === pickedId) ?? options[0]
+  const onlyKeep = options.length === 1
   const daysSince = diffDays(last.date, asOf)
   const insufficient = estimate.basis === 'insufficient'
   const tdeeDiff = estimate.tdee - previous.tdee
-  const targetDiff = target.targetKcal - previous.targetKcal
-  const sameTarget = targetDiff === 0
-  const sinceLabel = last.kind === 'initial' ? '시작한 뒤로' : '지난 체크인 뒤로'
+  const sinceLabel = last.kind === 'initial' ? '시작할 때보다' : '지난 체크인보다'
 
-  const save = async (plan: { estimatedTdee: number; targetKcal: number }) => {
+  const confirm = async () => {
     if (saving) return
     setSaving(true)
     setError(false)
     try {
-      await saveCheckin({ date: asOf, trendKg, ...plan })
+      await applyCheckinOption(asOf, trendKg, selected)
       navigate('/')
     } catch {
       setError(true)
       setSaving(false)
     }
   }
-  const accept = () => save({ estimatedTdee: estimate.tdee, targetKcal: target.targetKcal })
-  const keep = () => save({ estimatedTdee: previous.tdee, targetKcal: previous.targetKcal })
 
   return (
     <main className="page checkin-page">
-      <h1 className="page-title">주간 체크인</h1>
-      <p className="muted">
-        지난 기록으로 실제 소비 칼로리를 다시 추정하고, 그에 맞춰 하루 목표 칼로리를 조정해요.
-      </p>
+      <header className="checkin-head">
+        <h1 className="page-title">주간 체크인</h1>
+        <p className="muted">지난 한 주를 돌아보고, 다음 한 주를 어떻게 갈지 한 가지만 정해요.</p>
+      </header>
 
       {!due && (
         <p className="banner checkin-note" role="note">
           {daysSince <= 0 ? (
-            <>오늘 이미 계획을 정했어요. 체크인은 일주일에 한 번을 권장하지만, 지금 다시 해도 괜찮아요.</>
+            <>오늘 이미 계획을 정했어요. 체크인은 일주일에 한 번을 권하지만, 지금 다시 해도 괜찮아요.</>
           ) : (
             <>
-              마지막 체크인이 <span className="num">{daysSince}</span>일 전이에요. 일주일에 한 번을 권장하지만, 지금 해도
+              마지막 체크인이 <span className="num">{daysSince}</span>일 전이에요. 일주일에 한 번을 권하지만, 지금 해도
               괜찮아요.
             </>
           )}
         </p>
       )}
 
-      <section className="card" aria-labelledby="checkin-summary-title">
+      <section className="panel checkin-hero" aria-labelledby="checkin-summary-title">
         <h2 className="card-title" id="checkin-summary-title">
-          지난 기간 요약
+          지금 추세 체중
         </h2>
-        <ul className="list checkin-stats">
-          <li>
-            <span className="muted">추세 체중</span>
-            {trendKg !== null ? (
-              <span className="checkin-value">
-                <span className="num">{trendKg.toFixed(1)}</span>kg
-              </span>
-            ) : (
-              <span className="muted small">체중 기록이 없어요</span>
+        {trendKg !== null ? (
+          <>
+            <p className="big-num">
+              <span data-testid="checkin-trend">{trendKg.toFixed(1)}</span>
+              <span className="checkin-unit">kg</span>
+            </p>
+            {trendChangeKg !== null && (
+              <p className="checkin-hero-change" data-testid="checkin-change">
+                {Number(Math.abs(trendChangeKg).toFixed(1)) === 0 ? (
+                  `${sinceLabel} 거의 그대로예요`
+                ) : (
+                  <>
+                    {sinceLabel} <span className="num">{signed(trendChangeKg, 1)}</span> kg
+                  </>
+                )}
+              </p>
             )}
-          </li>
-          {trendChangeKg !== null && (
-            <li>
-              <span className="muted">{sinceLabel} 변화</span>
-              <span className="checkin-value">
-                <span className="num">{signed(trendChangeKg, 2)}</span>kg
-              </span>
-            </li>
-          )}
-          <li>
-            <span className="muted">
-              하루 평균 섭취
-              {estimate.avgIntake !== null && (
-                <span className="small checkin-sub">
-                  기록한 <span className="num">{estimate.loggedDays}</span>일 기준
-                </span>
+          </>
+        ) : (
+          <p className="checkin-hero-change">아직 체중 기록이 없어요.</p>
+        )}
+        <dl className="checkin-hero-facts">
+          <div>
+            <dt>최근 7일 평균 섭취</dt>
+            <dd data-testid="checkin-recent">
+              {recent.avgKcal !== null ? (
+                <>
+                  <span className="num">{kcal(recent.avgKcal)}</span> kcal · 기록{' '}
+                  <span className="num">{recent.loggedDays}</span>일
+                </>
+              ) : (
+                '식사 기록이 없어요'
               )}
-            </span>
-            {estimate.avgIntake !== null ? (
-              <span className="checkin-value">
-                <span className="num">{kcal(estimate.avgIntake)}</span>kcal
-              </span>
-            ) : (
-              <span className="muted small">식사 기록이 없어요</span>
-            )}
-          </li>
-          <li>
-            <span className="muted">체중 기록</span>
-            <span className="checkin-value">
-              <span className="num">{estimate.weighIns}</span>회
-            </span>
-          </li>
-        </ul>
-        <p className="small muted checkin-foot">
-          섭취량과 체중 기록 횟수는 최근 <span className="num">{WINDOW_DAYS}</span>일 기준이에요.
-        </p>
+            </dd>
+          </div>
+          <div>
+            <dt>지금 단계</dt>
+            <dd data-testid="checkin-phase">
+              {review.phase === 'lose' ? (
+                <>
+                  감량 <span className="num">{review.weekOfPhase}</span>주차
+                </>
+              ) : (
+                '유지 기간'
+              )}
+            </dd>
+          </div>
+        </dl>
       </section>
 
       <section className="card" aria-labelledby="checkin-tdee-title">
@@ -158,11 +209,13 @@ export default function Checkin() {
           <span className="checkin-arrow" aria-hidden="true">
             →
           </span>
-          <span className="visually-hidden">에서</span>
+          <span className="checkin-sr">에서</span>
           <span className="num checkin-new">{kcal(estimate.tdee)}</span>
-          <span className="muted">kcal</span>
+          <span className="muted checkin-change-unit">kcal</span>
         </p>
-        <p className="small muted num">{insufficient ? '이전 추정치 유지' : signedKcal(tdeeDiff)}</p>
+        <p className="small muted num">
+          {insufficient ? '이전 추정치 그대로' : tdeeDiff === 0 ? '변화 없음' : signedKcal(tdeeDiff)}
+        </p>
 
         {insufficient ? (
           <div className="checkin-explain">
@@ -199,28 +252,68 @@ export default function Checkin() {
         )}
       </section>
 
-      <section className="card" aria-labelledby="checkin-target-title">
-        <h2 className="card-title" id="checkin-target-title">
-          새 목표
+      {review.tooFast && (
+        <p className="banner banner--warn checkin-note" role="note" data-testid="checkin-too-fast">
+          요즘 체중이 한 주에 체중의 1%보다 빠르게 줄고 있어요.{' '}
+          {options[0].targetKcal > previous.targetKcal
+            ? '그래서 새 목표를 조금 더 높게 잡았어요. 조금 더 먹어도 괜찮아요.'
+            : '조금 더 먹어도 괜찮아요. 천천히 빼야 오래 가요.'}
+        </p>
+      )}
+
+      <section className="card" aria-labelledby="checkin-choice-title">
+        <h2 className="card-title" id="checkin-choice-title">
+          다음 한 주
         </h2>
-        <p className="small muted">
-          지금 목표 <span className="num">{kcal(previous.targetKcal)}</span>kcal
-        </p>
-        <p className="big-num checkin-hero">
-          <span data-testid="checkin-target">{kcal(target.targetKcal)}</span>
-          <span className="checkin-unit">kcal</span>
-        </p>
-        <p className="small muted num">{sameTarget ? '지금 목표와 같아요' : `지금보다 ${signedKcal(targetDiff)}`}</p>
-        {target.lossCapped && (
-          <p className="small checkin-explain">
-            너무 빠른 감량은 몸에 무리가 될 수 있어서, 감량 속도를 체중의 1%/주(주{' '}
-            <span className="num">{target.appliedWeeklyLossKg.toFixed(2)}</span>kg)로 낮췄어요.
+        {onlyKeep ? (
+          <p data-testid="checkin-nochange">
+            달라질 게 없어요. 지금 목표{' '}
+            <span className="num">
+              {kcal(targetRange(previous.targetKcal).low)}~{kcal(targetRange(previous.targetKcal).high)}
+            </span>{' '}
+            kcal 그대로 한 주 더 가요.
           </p>
-        )}
-        {target.flooredAtMin && (
-          <p className="small checkin-explain">
-            계산한 값이 너무 낮아서 안전 하한선에 맞췄어요. 이보다 적게 먹는 건 권하지 않아요.
-          </p>
+        ) : (
+          <div className="checkin-options" role="radiogroup" aria-labelledby="checkin-choice-title">
+            {options.map((o) => {
+              const copy = optionCopy(o, review)
+              const range = targetRange(o.targetKcal)
+              const diff = o.targetKcal - previous.targetKcal
+              const isSelected = o.id === selected.id
+              return (
+                <label
+                  key={o.id}
+                  className={`checkin-option${isSelected ? ' is-selected' : ''}`}
+                  data-testid={`option-${o.id}`}
+                >
+                  <input
+                    type="radio"
+                    name="checkin-option"
+                    value={o.id}
+                    checked={isSelected}
+                    disabled={saving}
+                    onChange={() => setPickedId(o.id)}
+                  />
+                  <span className="checkin-option-mark" aria-hidden="true" />
+                  <span className="checkin-option-body">
+                    <span className="checkin-option-head">
+                      <span className="checkin-option-title">{copy.title}</span>
+                      {o.recommended && <span className="chip chip--accent">추천</span>}
+                    </span>
+                    <span className="checkin-option-target">
+                      <span className="num" data-testid={`option-${o.id}-range`}>
+                        {kcal(range.low)}~{kcal(range.high)} kcal
+                      </span>
+                      <span className="small muted num">
+                        {diff === 0 ? '지금 목표와 같아요' : `지금보다 ${signedKcal(diff)}`}
+                      </span>
+                    </span>
+                    <span className="small muted checkin-option-why">{copy.why}</span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
         )}
       </section>
 
@@ -231,22 +324,17 @@ export default function Checkin() {
       )}
 
       <div className="stack">
-        {sameTarget ? (
-          <button type="button" className="btn btn--primary btn--block" disabled={saving} onClick={accept}>
-            확인
-          </button>
-        ) : (
-          <>
-            <button type="button" className="btn btn--primary btn--block" disabled={saving} onClick={accept}>
-              새 목표로 바꾸기
-            </button>
-            <button type="button" className="btn btn--block" disabled={saving} onClick={keep}>
-              지금 목표 유지하기
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          className="btn btn--primary btn--block btn--lg"
+          disabled={saving}
+          onClick={() => void confirm()}
+          data-testid="checkin-confirm"
+        >
+          {onlyKeep ? '확인' : optionCopy(selected, review).action}
+        </button>
         <p className="small muted checkin-actions-note">
-          {sameTarget
+          {onlyKeep
             ? '확인하면 체크인이 기록되고, 다음 체크인은 일주일 뒤예요.'
             : '어느 쪽을 골라도 체크인이 기록되고, 다음 체크인은 일주일 뒤예요.'}
         </p>

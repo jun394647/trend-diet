@@ -111,7 +111,7 @@ export default function FoodSearch({ busy, onLog }: Props) {
               {picked.tag && `${picked.tag} · `}100{picked.unit}당 {fmtKcal(picked.kcalPer100)} kcal
             </p>
           </div>
-          <button type="button" className="btn" onClick={() => setPicked(null)}>
+          <button type="button" className="btn btn--ghost food-picked-back" onClick={() => setPicked(null)}>
             다시 검색
           </button>
         </div>
@@ -171,7 +171,7 @@ export default function FoodSearch({ busy, onLog }: Props) {
           <input type="checkbox" checked={saveFav} onChange={(e) => setSaveFav(e.target.checked)} />
           <span>이 양으로 즐겨찾기에 저장</span>
         </label>
-        <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
+        <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={busy}>
           기록하기
         </button>
       </form>

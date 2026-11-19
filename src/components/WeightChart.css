@@ -1,7 +1,9 @@
+/* 체중 차트와 섭취 차트가 함께 쓰는 범례와 툴팁도 여기에 둔다. */
+
 .weight-chart {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -41,12 +43,11 @@
   padding: 8px 10px;
   font-size: 0.8125rem;
   color: var(--text);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 14%);
-  min-width: 120px;
+  min-width: 128px;
 }
 
 .chart-tip-date {
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 4px;
 }
 
@@ -59,5 +60,10 @@
 
 .chart-tip-row > .num {
   color: var(--text);
+  font-weight: 600;
+}
+
+.chart-tip-state {
+  margin-top: 4px;
   font-weight: 600;
 }

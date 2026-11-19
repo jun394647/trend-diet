@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import ProfileForm, {
+import ProfileForm from '../components/ProfileForm'
+import {
   SECTION_FIELDS,
   draftToProfileFields,
   emptyDraft,
@@ -7,12 +8,13 @@ import ProfileForm, {
   validateDraft,
   type ProfileDraft,
   type ProfileSection,
-} from '../components/ProfileForm'
+} from '../components/profileFormModel'
 import { parseDate, today } from '../lib/date'
 import { buildInitialCheckin } from '../lib/plan'
+import { BREAK_AFTER_WEEKS, BREAK_DAYS, targetRange } from '../lib/sustain'
 import { KCAL_PER_KG, computeTarget, projectGoalDate } from '../lib/tdee'
 import { useStore } from '../store'
-import type { Profile } from '../types'
+import type { DateStr, Profile } from '../types'
 import { AccountAuth } from '../components/AccountPanel'
 import { useSync } from '../sync/store'
 import './Onboarding.css'
@@ -41,10 +43,14 @@ function formatFullDate(s: string): string {
   return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`
 }
 
-function buildProfile(draft: ProfileDraft): Profile {
+function buildProfile(draft: ProfileDraft, date: DateStr): Profile {
+  const fields = draftToProfileFields(draft)
   return {
-    ...draftToProfileFields(draft),
+    ...fields,
     startWeightKg: parseNum(draft.weightKg),
+    phase: fields.weeklyLossKg > 0 ? 'lose' : 'maintain',
+    phaseStartedAt: date,
+    breakUntil: null,
     createdAt: new Date().toISOString(),
   }
 }
@@ -101,7 +107,7 @@ export default function Onboarding() {
     setSaving(true)
     setSaveError(null)
     try {
-      await useStore.getState().completeOnboarding(buildProfile(draft))
+      await useStore.getState().completeOnboarding(buildProfile(draft, today()))
       // 저장되면 App이 메인 화면으로 바꾸므로 여기서 더 할 일은 없다.
     } catch {
       setSaveError('저장하지 못했어요. 잠시 뒤에 다시 시도해 주세요.')
@@ -133,8 +139,8 @@ export default function Onboarding() {
       {step === 'welcome' && (
         <section className="stack ob-body">
           <p className="ob-lead">
-            매일 체중과 먹은 칼로리를 기록하면, 들쭉날쭉한 체중을 추세선으로 다듬어 보여 주고 내 몸이
-            실제로 쓰는 칼로리를 계산해 매주 알맞은 목표 칼로리를 알려 줘요.
+            하루하루를 따지지 않고 한 주 평균으로 봐요. 그리고 내 몸이 실제로 반응하는 만큼 계획을
+            맞춰 가요.
           </p>
           {syncEnabled ? (
             <p className="banner">
@@ -150,7 +156,7 @@ export default function Onboarding() {
                 {syncEmail}(으)로 로그인했어요. 이 계정에는 아직 기록이 없으니 이어서 진행해 주세요.
               </p>
             ) : showLogin || syncConflict ? (
-              <div className="card">
+              <div className="well">
                 <AccountAuth />
               </div>
             ) : (
@@ -173,7 +179,9 @@ export default function Onboarding() {
             </p>
           )}
           {step === 'goal' && (
-            <p className="muted ob-desc">현재 체중은 {draft.weightKg.trim()}kg이에요.</p>
+            <p className="muted ob-desc">
+              현재 체중은 {draft.weightKg.trim()}kg이에요. 속도는 나중에 설정에서 바꿀 수 있어요.
+            </p>
           )}
           <ProfileForm
             key={step}
@@ -197,21 +205,21 @@ export default function Onboarding() {
 
       <footer className="ob-actions">
         {stepIndex > 0 && (
-          <button type="button" className="btn" onClick={goBack} disabled={saving}>
+          <button type="button" className="btn btn--lg" onClick={goBack} disabled={saving}>
             이전
           </button>
         )}
         {step === 'result' ? (
           <button
             type="button"
-            className="btn btn--primary ob-next"
+            className="btn btn--primary btn--lg ob-next"
             onClick={() => void confirm()}
             disabled={saving || Object.keys(errors).length > 0}
           >
             {saving ? '저장하는 중…' : '이 계획으로 시작하기'}
           </button>
         ) : (
-          <button type="button" className="btn btn--primary ob-next" onClick={goNext}>
+          <button type="button" className="btn btn--primary btn--lg ob-next" onClick={goNext}>
             {step === 'welcome' ? '시작하기' : '다음'}
           </button>
         )}
@@ -229,7 +237,7 @@ function Result({ draft, date, valid }: { draft: ProfileDraft; date: string; val
     )
   }
 
-  const profile = buildProfile(draft)
+  const profile = buildProfile(draft, date)
   const checkin = buildInitialCheckin(profile, date)
   const target = computeTarget({
     tdee: checkin.estimatedTdee,
@@ -237,6 +245,7 @@ function Result({ draft, date, valid }: { draft: ProfileDraft; date: string; val
     sex: profile.sex,
     weightKg: profile.startWeightKg,
   })
+  const range = targetRange(checkin.targetKcal)
   const losing = profile.weeklyLossKg > 0
   // 하한에 걸리면 실제 감량 속도가 달라지므로 실제 적자 기준으로 다시 계산한다.
   const effectiveWeeklyLoss = target.flooredAtMin
@@ -252,41 +261,39 @@ function Result({ draft, date, valid }: { draft: ProfileDraft; date: string; val
         })
       : null
   const appliedLabel = `${Math.round(target.appliedWeeklyLossKg * 100) / 100}kg`
+  const paceLabel = `${Math.round(effectiveWeeklyLoss * 100) / 100}kg`
 
   return (
-    <section className="stack ob-body">
-      <div className="card ob-result">
-        <p className="card-title">하루 목표 칼로리</p>
-        <p className="big-num" data-testid="target-kcal">
-          {kcal(checkin.targetKcal)}
-          <span className="ob-unit">kcal</span>
+    <section className="stack ob-body ob-result">
+      <div className="panel ob-plan">
+        <h2 className="card-title">{losing ? '하루 목표 범위' : '하루 유지 범위'}</h2>
+        <p className="big-num ob-range">
+          <span data-testid="target-range">
+            {kcal(range.low)}~{kcal(range.high)}
+          </span>
+          <span className="unit">kcal</span>
         </p>
-        <p className="muted small">
+        <p className="ob-plan-msg">
           {losing
-            ? '하루에 이만큼 먹으면 목표한 속도로 빠질 것으로 예상해요.'
-            : '체중 유지가 목표라서 쓰는 만큼 먹는 계획이에요.'}
+            ? effectiveWeeklyLoss > 0
+              ? `이 범위 안에서 먹으면 일주일에 ${paceLabel}쯤 빠질 것으로 예상해요.`
+              : '이 범위 안에서 먹는 걸 목표로 해요.'
+            : '쓰는 만큼 먹어서 지금 체중을 지키는 계획이에요.'}
         </p>
-      </div>
-
-      <div className="card">
-        <ul className="list">
-          <li>
-            <span className="muted">예상 하루 소비 칼로리</span>
-            <strong className="num" data-testid="tdee-kcal">
+        <dl className="ob-facts">
+          <div>
+            <dt>예상 하루 소비 칼로리</dt>
+            <dd className="num" data-testid="tdee-kcal">
               {kcal(checkin.estimatedTdee)}kcal
-            </strong>
-          </li>
-          <li>
-            <span className="muted">일주일에 뺄 체중</span>
-            <strong className="num">{losing ? appliedLabel : '유지'}</strong>
-          </li>
+            </dd>
+          </div>
           {goalDate && (
-            <li>
-              <span className="muted">목표 체중 도달 예상</span>
-              <strong className="num">{formatFullDate(goalDate)}쯤</strong>
-            </li>
+            <div>
+              <dt>목표 체중 도달 예상</dt>
+              <dd className="num">{formatFullDate(goalDate)}쯤</dd>
+            </div>
           )}
-        </ul>
+        </dl>
       </div>
 
       {target.lossCapped && (
@@ -301,9 +308,22 @@ function Result({ draft, date, valid }: { draft: ProfileDraft; date: string; val
         </p>
       )}
 
+      <div className="card">
+        <h2 className="card-title">이 계획은 이렇게 이어 가요</h2>
+        <ul className="ob-how">
+          <li>하루가 아니라 한 주 평균으로 봐요. 하루쯤 범위를 벗어나도 괜찮아요.</li>
+          <li>2~3주 기록이 쌓이면 실제 변화에 맞춰 목표를 다시 계산해요.</li>
+          {losing && (
+            <li>
+              감량이 {BREAK_AFTER_WEEKS}주쯤 이어지면 {BREAK_DAYS / 7}주 쉬어 가기를 권해요.
+            </li>
+          )}
+        </ul>
+      </div>
+
       <p className="muted small">
-        키, 체중, 나이, 활동량으로 계산한 추정치이며 의학적 조언이 아니에요. 기록이 쌓이면 매주 실제
-        변화에 맞춰 다시 계산해요.
+        키, 체중, 나이, 활동량으로 계산한 추정치이며 의학적 조언이 아니에요. 건강에 걱정되는 점이
+        있으면 전문가와 상담해 주세요.
       </p>
     </section>
   )

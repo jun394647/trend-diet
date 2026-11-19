@@ -23,20 +23,24 @@ function ConflictChoice() {
   }
 
   return (
-    <div className="stack" role="group" aria-label="기록 합치는 방법 고르기">
+    <div className="stack acc-conflict" role="group" aria-label="기록 합치는 방법 고르기">
       <p>
         이 기기에 기록 <b className="num">{conflict.localCount.toLocaleString('ko-KR')}</b>건, 계정에
         기록 <b className="num">{conflict.remoteCount.toLocaleString('ko-KR')}</b>건이 있어요. 어떻게
         할까요?
       </p>
-      <button type="button" className="btn btn--primary btn--block" disabled={busy} onClick={() => choose('remote')}>
-        계정 기록 불러오기
-      </button>
-      <p className="small muted">이 기기의 기록은 지워지고 계정에 저장된 기록으로 바뀌어요.</p>
-      <button type="button" className="btn btn--block" disabled={busy} onClick={() => choose('merge')}>
-        두 기록 합치기
-      </button>
-      <p className="small muted">같은 날짜의 체중처럼 겹치는 기록은 이 기기 쪽이 남아요.</p>
+      <div className="acc-choice">
+        <button type="button" className="btn btn--primary btn--block" disabled={busy} onClick={() => choose('remote')}>
+          계정 기록 불러오기
+        </button>
+        <p className="small muted">이 기기의 기록은 지워지고 계정에 저장된 기록으로 바뀌어요.</p>
+      </div>
+      <div className="acc-choice">
+        <button type="button" className="btn btn--block" disabled={busy} onClick={() => choose('merge')}>
+          두 기록 합치기
+        </button>
+        <p className="small muted">같은 날짜의 체중처럼 겹치는 기록은 이 기기 쪽이 남아요.</p>
+      </div>
       <button type="button" className="btn btn--ghost btn--block" disabled={busy} onClick={() => void signOut()}>
         취소하고 로그아웃
       </button>
@@ -149,8 +153,8 @@ export default function AccountPanel() {
   if (!enabled) return null
 
   return (
-    <section className="card" aria-labelledby="acc-title">
-      <h2 className="card-title" id="acc-title">
+    <section className="card stack" aria-labelledby="acc-title">
+      <h2 className="acc-title" id="acc-title">
         계정과 동기화
       </h2>
       {!ready ? (
@@ -159,6 +163,9 @@ export default function AccountPanel() {
         <div className="stack">
           <div>
             <p className="acc-email">{email}</p>
+            <p className="small muted">
+              기록을 계정에 저장해서, 다른 기기에서 로그인해도 같은 기록이 보여요.
+            </p>
             <p className="small muted" role="status">
               {status === 'syncing'
                 ? '동기화하는 중이에요…'
@@ -172,9 +179,6 @@ export default function AccountPanel() {
               동기화하지 못했어요. 기록은 이 기기에 남아 있고, 연결되면 다시 올려요. {error}
             </p>
           )}
-          <p className="small muted">
-            기록을 계정에 저장해서, 다른 기기에서 로그인해도 같은 기록이 보여요.
-          </p>
           <div className="acc-actions">
             <button type="button" className="btn" disabled={status === 'syncing'} onClick={() => void syncNow()}>
               지금 동기화

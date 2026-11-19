@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { formatKorean } from '../lib/date'
 import { ROUGH_PORTIONS, roughKcal } from '../lib/selectors'
+import { targetRange } from '../lib/sustain'
 import type { RoughSize } from '../lib/selectors'
 import { useStore } from '../store'
 import type { DateStr } from '../types'
@@ -89,6 +90,7 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
   }, [mode])
 
   const hasName = name.trim() !== ''
+  const range = targetRange(targetKcal)
 
   async function run(action: () => Promise<void>) {
     if (busy) return
@@ -161,7 +163,7 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
             <h2 className="meal-sheet-title">식사 추가</h2>
             <p className="small muted">{formatKorean(date)}</p>
           </div>
-          <button type="button" className="btn btn--ghost" onClick={onClose}>
+          <button type="button" className="btn btn--ghost meal-sheet-close" onClick={onClose}>
             닫기
           </button>
         </div>
@@ -245,7 +247,7 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
                 {!hasName && <span className="small muted"> · 이름을 적으면 켤 수 있어요</span>}
               </span>
             </label>
-            <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
+            <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={busy}>
               기록하기
             </button>
           </form>
@@ -326,8 +328,11 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
               ))}
             </div>
             <p className="small muted">
-              하루 목표 {fmtKcal(targetKcal)} kcal를 기준으로 어림잡은 양이에요. 정확하지 않아도
-              기록해 두는 편이 좋아요.
+              하루 목표 범위{' '}
+              <span className="num">
+                {fmtKcal(range.low)}~{fmtKcal(range.high)}
+              </span>{' '}
+              kcal에 맞춰 어림잡은 양이에요. 정확하지 않아도 적어 두면 한 주 평균을 볼 수 있어요.
             </p>
           </div>
         )}

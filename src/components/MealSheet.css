@@ -1,21 +1,30 @@
+/* main.tsx가 index.css를 화면 CSS보다 나중에 불러오므로, 공통 클래스를 덮어쓰는 규칙은 클래스를 겹쳐 우선순위를 올린다. */
 .meal-sheet:focus {
   outline: none;
 }
 
 .meal-sheet-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
 
 .meal-sheet-title {
-  font-size: 1.125rem;
+  font-family: var(--font-display);
+  font-size: 1.375rem;
   font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+/* 닫기는 시트 가장자리에 붙인다. 누르는 넓이는 그대로 둔다. */
+.btn.meal-sheet-close {
+  margin: -8px -12px 0 0;
+  padding: 0 12px;
 }
 
 .meal-sheet .segmented > button {
-  min-height: 44px;
   padding: 0 4px;
   font-size: 0.9375rem;
 }
@@ -35,10 +44,15 @@
 }
 
 .meal-check input {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   accent-color: var(--accent);
   flex: 0 0 auto;
+}
+
+.meal-check input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .meal-check--disabled {
@@ -46,8 +60,9 @@
   cursor: not-allowed;
 }
 
-.fav-list > li {
-  padding: 4px 0;
+/* 즐겨찾기: 시트 바탕 위에 가는 선으로만 나눈 줄 */
+.list.fav-list > li {
+  padding: 2px 0;
   gap: 4px;
 }
 
@@ -57,8 +72,8 @@
   background: transparent;
   flex: 1 1 0;
   min-width: 0;
-  min-height: 52px;
-  padding: 6px 4px;
+  min-height: 54px;
+  padding: 6px 0;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -73,13 +88,17 @@
   outline-offset: 2px;
 }
 
-.fav-log:active {
+.fav-log:active:not(:disabled) {
   background: var(--surface-2);
+}
+
+.fav-log:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .fav-name {
   font-weight: 600;
-  overflow-wrap: anywhere;
   min-width: 0;
 }
 
@@ -97,11 +116,10 @@
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 .fav-confirm-text {
-  overflow-wrap: anywhere;
   min-width: 0;
 }
 
@@ -121,14 +139,15 @@
   appearance: none;
   border: 1px solid var(--border);
   background: var(--surface);
-  border-radius: var(--radius);
+  color: var(--text);
+  border-radius: var(--radius-sm);
   min-height: 96px;
   padding: 12px 4px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
   cursor: pointer;
 }
 
@@ -137,13 +156,14 @@
   outline-offset: 2px;
 }
 
-.rough-btn:active {
+.rough-btn:active:not(:disabled) {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
 
 .rough-btn:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .rough-label {

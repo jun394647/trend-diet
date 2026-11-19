@@ -292,3 +292,46 @@ describe('POST /api/ai: 성공과 모델 쪽 실패', () => {
     expect(res.headers.get('Cache-Control')).toBe('no-store')
   })
 })
+
+describe('GET 상태에 오늘 쓴 횟수 덧붙이기', () => {
+  const env = { ANTHROPIC_API_KEY: 'k', VITE_SUPABASE_URL: 'https://sb.example', VITE_SUPABASE_ANON_KEY: 'anon' }
+  const get = (headers?: Record<string, string>) => new Request('https://app.example/api/ai', { method: 'GET', headers })
+  const run = async (req: Request, fetchImpl: typeof fetch) => {
+    const callModel = vi.fn()
+    const res = await handleAi(req, { env, fetch: fetchImpl, callModel } as never)
+    return { body: (await res.json()) as { configured: boolean; dailyLimit: number; used?: number }, callModel }
+  }
+
+  it('토큰이 없으면 횟수를 읽지 않는다', async () => {
+    const f = vi.fn()
+    const { body } = await run(get(), f as never)
+    expect(body.used).toBeUndefined()
+    expect(f).not.toHaveBeenCalled()
+  })
+
+  it('토큰이 있으면 그 사용자의 오늘 횟수를 읽는다', async () => {
+    const f = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toContain('/rest/v1/ai_usage?select=count&day=eq.')
+      expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer tok')
+      return new Response(JSON.stringify([{ count: 7 }]), { status: 200 })
+    })
+    const { body } = await run(get({ Authorization: 'Bearer tok' }), f as never)
+    expect(body).toMatchObject({ configured: true, used: 7 })
+  })
+
+  it('오늘 기록이 없으면 0이다', async () => {
+    const f = vi.fn(async () => new Response('[]', { status: 200 }))
+    expect((await run(get({ Authorization: 'Bearer tok' }), f as never)).body.used).toBe(0)
+  })
+
+  it('횟수를 읽지 못해도 상태는 돌려준다', async () => {
+    const f = vi.fn(async () => new Response('nope', { status: 500 }))
+    const { body } = await run(get({ Authorization: 'Bearer tok' }), f as never)
+    expect(body.configured).toBe(true)
+    expect(body.used).toBeUndefined()
+    const g = vi.fn(async () => {
+      throw new Error('network')
+    })
+    expect((await run(get({ Authorization: 'Bearer tok' }), g as never)).body.used).toBeUndefined()
+  })
+})

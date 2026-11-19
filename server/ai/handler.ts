@@ -166,8 +166,37 @@ async function handlePost(request: Request, deps: AiDeps): Promise<Response> {
   return json(body)
 }
 
+/** 서버 날짜 기준(한국 시간)의 오늘. ai_take()가 세는 날짜와 같아야 한다. */
+export function kstToday(now: Date = new Date()): string {
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+/**
+ * 상태 응답. 로그인 토큰이 함께 오면 그 사용자가 오늘 쓴 횟수를 읽어 덧붙인다.
+ * 횟수를 읽지 못해도 상태 응답 자체는 돌려준다(화면은 첫 호출 뒤에 알게 된다).
+ */
+async function statusFor(request: Request, deps: AiDeps): Promise<AiStatus> {
+  const status = aiStatus(deps.env)
+  const token = bearerToken(request)
+  const sb = supabaseConfig(deps.env)
+  if (!status.configured || !token || !sb) return status
+  try {
+    const res = await deps.fetch(`${sb.url}/rest/v1/ai_usage?select=count&day=eq.${kstToday()}`, {
+      method: 'GET',
+      headers: { apikey: sb.anonKey, Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+    if (res.status !== 200) return status
+    const rows = (await res.json()) as unknown
+    if (!Array.isArray(rows)) return status
+    const count = rows.length > 0 ? Number((rows[0] as { count?: unknown }).count) : 0
+    return Number.isFinite(count) && count >= 0 ? { ...status, used: count } : status
+  } catch {
+    return status
+  }
+}
+
 export async function handleAi(request: Request, deps: AiDeps): Promise<Response> {
-  if (request.method === 'GET') return json(aiStatus(deps.env))
+  if (request.method === 'GET') return json(await statusFor(request, deps))
   if (request.method === 'POST') {
     try {
       return await handlePost(request, deps)

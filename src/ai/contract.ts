@@ -190,4 +190,6 @@ export interface AiErrorBody {
 export interface AiStatus {
   configured: boolean
   dailyLimit: number
+  /** 로그인 토큰을 함께 보냈을 때만 온다: 오늘 이미 쓴 횟수. 알 수 없으면 없다. */
+  used?: number
 }

@@ -67,6 +67,8 @@ const SYSTEM_WEEK_REVIEW = `${BASE}
 
 기록이 없는 날은 실패로 다루지 않습니다. 범위를 넘은 날은 주 평균 안에서 어떤 의미인지로 이야기합니다. 기간을 존중해 주세요. 감량 기간이면 목표 범위와 추세를, 유지 휴식 중이면 유지 칼로리 근처로 먹고 있는지를 봅니다. 추세가 계획보다 느리거나 힘들어 보이면 더 줄이라는 말 대신 속도를 늦추는 쪽을 권합니다. 기록이 거의 없으면 볼 수 있는 만큼만 말하고, 부담 없는 기록 한 가지를 nextStep으로 권합니다.
 
+앱은 주간 체크인에서 숫자를 근거로 다음 한 주의 선택지(쉬어 가기, 속도 늦추기, 목표 조정 등)를 따로 권합니다. 그 권고가 함께 주어지면 nextStep은 그것과 어긋나지 않게 쓰고, 목표 칼로리나 감량 속도 자체를 바꾸라는 말은 하지 않습니다. nextStep은 기록 습관이나 식사 방식처럼 사용자가 스스로 해 볼 수 있는 작은 행동으로 씁니다.
+
 네 필드를 모두 합쳐 한글 450자 안쪽으로 씁니다.`
 
 const SYSTEM_SUGGEST = `${BASE}
@@ -156,13 +158,23 @@ export function buildMealPhotoPrompt(req: RequestOf<'meal-photo'>): Prompt {
 export function buildWeekReviewPrompt(req: RequestOf<'week-review'>): Prompt {
   return {
     system: SYSTEM_WEEK_REVIEW,
-    messages: [{ role: 'user', content: `${contextBlock(req.context)}\n\n지난 한 주를 돌아봐 주세요.` }],
+    messages: [
+      {
+        role: 'user',
+        content: `${contextBlock(req.context)}\n\n${
+          clean(req.recommendation) ? `앱이 이번 체크인에서 권하는 선택지: ${clean(req.recommendation)}\n\n` : ''
+        }지난 한 주를 돌아봐 주세요.`,
+      },
+    ],
   }
 }
 
 export function buildSuggestPrompt(req: RequestOf<'suggest'>): Prompt {
   const wish = clean(req.wish)
-  const ask = wish ? `다음 끼를 제안해 주세요.\n바라는 것(wish): ${wish}` : '다음 끼를 제안해 주세요. 따로 바라는 것은 없어요.'
+  const avoid = (req.avoid ?? []).map((a) => clean(a)).filter(Boolean)
+  const ask =
+    (wish ? `다음 끼를 제안해 주세요.\n바라는 것(wish): ${wish}` : '다음 끼를 제안해 주세요. 따로 바라는 것은 없어요.') +
+    (avoid.length > 0 ? `\n방금 추천받아서 이번에는 빼고 싶은 것: ${avoid.join(', ')}` : '')
   return {
     system: SYSTEM_SUGGEST,
     messages: [{ role: 'user', content: `${contextBlock(req.context)}\n\n${ask}` }],

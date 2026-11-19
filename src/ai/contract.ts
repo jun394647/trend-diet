@@ -61,10 +61,23 @@ export const AiRequestSchema = z.discriminatedUnion('task', [
     mediaType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
     note: z.string().max(200).optional(),
   }),
-  /** 지난 한 주를 돌아보고 다음 한 주에 해 볼 것을 알려 준다. */
-  z.object({ task: z.literal('week-review'), context: CoachContextSchema }),
-  /** 오늘 남은 범위에 맞는 다음 끼를 제안한다. */
-  z.object({ task: z.literal('suggest'), context: CoachContextSchema, wish: z.string().max(100).optional() }),
+  /**
+   * 지난 한 주를 돌아보고 다음 한 주에 해 볼 것을 알려 준다.
+   * recommendation은 앱이 주간 체크인에서 이미 권하고 있는 선택지(예: '2주 쉬어 가기').
+   * AI의 조언이 그것과 어긋나지 않게 하려고 넘긴다.
+   */
+  z.object({
+    task: z.literal('week-review'),
+    context: CoachContextSchema,
+    recommendation: z.string().max(200).optional(),
+  }),
+  /** 오늘 남은 범위에 맞는 다음 끼를 제안한다. avoid는 이미 추천받아 이번에는 빼고 싶은 음식 이름들. */
+  z.object({
+    task: z.literal('suggest'),
+    context: CoachContextSchema,
+    wish: z.string().max(100).optional(),
+    avoid: z.array(z.string().max(60)).max(12).optional(),
+  }),
   /** 코치에게 자유롭게 묻는다. history는 이전 대화(오래된 것부터). */
   z.object({
     task: z.literal('ask'),
@@ -169,6 +182,7 @@ export type AiErrorCode =
 export interface AiErrorBody {
   ok: false
   error: AiErrorCode
+  /** 한도를 넘었을 때, 그리고 횟수를 쓴 뒤에 실패했을 때 함께 온다. 화면은 이 값으로 남은 횟수를 고친다. */
   usage?: AiUsage
 }
 

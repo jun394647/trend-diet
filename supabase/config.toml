@@ -3,6 +3,8 @@
 project_id = "trend-diet"
 
 [auth]
+# 새 가입을 막는다. 이미 가입한 계정은 그대로 로그인할 수 있다. 구글 로그인으로 새 계정이 만들어지는 것도 막힌다.
+enable_signup = false
 site_url = "https://trend-diet.vercel.app"
 # 구글 로그인 뒤에 돌아올 수 있는 주소
 additional_redirect_urls = ["https://trend-diet.vercel.app/**", "http://localhost:5173/**", "http://localhost:4317/**"]

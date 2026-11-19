@@ -33,6 +33,8 @@ export interface SyncState {
 export function authErrorMessage(message: string): string {
   const m = message.toLowerCase()
   if (m.includes('invalid login credentials')) return '이메일 또는 비밀번호가 맞지 않아요.'
+  if (m.includes('signups not allowed') || m.includes('signup is disabled') || m.includes('signup_disabled'))
+    return '지금은 새로 가입할 수 없어요. 이미 가입한 계정으로 로그인해 주세요.'
   if (m.includes('already registered')) return '이미 가입된 이메일이에요. 로그인해 주세요.'
   if (m.includes('email not confirmed')) return '메일로 보낸 확인 링크를 먼저 눌러 주세요.'
   if (m.includes('password') && (m.includes('6') || m.includes('weak') || m.includes('short')))

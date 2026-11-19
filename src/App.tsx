@@ -6,6 +6,7 @@ import Settings from './pages/Settings'
 import Today from './pages/Today'
 import Trend from './pages/Trend'
 import { useStore } from './store'
+import { useAi } from './ai/store'
 import { useSync } from './sync/store'
 
 function TabBar() {
@@ -47,6 +48,7 @@ export default function App() {
   useEffect(() => {
     // 기기 기록을 먼저 읽고, 그다음 계정 동기화를 시작한다.
     void init().then(() => useSync.getState().start())
+    void useAi.getState().check()
   }, [init])
 
   if (!ready) return <div className="center-screen">불러오는 중…</div>

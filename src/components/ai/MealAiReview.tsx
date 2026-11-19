@@ -13,6 +13,8 @@ export type MealAiSource =
   | { kind: 'photo'; base64: string; mediaType: 'image/jpeg'; previewUrl: string }
 
 export interface MealAiLogItem {
+  /** 결과 안에서의 순번. 일부만 저장됐을 때 어느 줄이 저장됐는지 알리는 데 쓴다. */
+  id: number
   name: string
   kcal: number
 }
@@ -22,6 +24,8 @@ interface Props {
   state: AiCallState<MealEstimate>
   /** 기록을 저장하는 중이면 true. */
   busy: boolean
+  /** 이미 기록한 줄의 id. 일부만 저장된 뒤 다시 기록할 때 두 번 들어가지 않게 목록에서 뺀다. */
+  savedIds?: readonly number[]
   /** AI에 보낸다. 사진이면 덧붙인 말을 함께 넘긴다. 다시 시도할 때도 쓴다. */
   onSend: (note?: string) => void
   /** 기다리는 중에 그만둔다. */
@@ -36,7 +40,7 @@ interface Props {
  *  - 사진이면 먼저 덧붙일 말을 받고, 확인한 뒤에야 보낸다.
  *  - 결과가 오면 음식별로 고치거나 뺀 뒤 한 번에 기록한다.
  */
-export default function MealAiReview({ source, state, busy, onSend, onCancel, onBack, onLog }: Props) {
+export default function MealAiReview({ source, state, busy, savedIds = NO_IDS, onSend, onCancel, onBack, onLog }: Props) {
   const [note, setNote] = useState('')
   const titleRef = useRef<HTMLHeadingElement>(null)
   const isPhoto = source.kind === 'photo'
@@ -53,10 +57,10 @@ export default function MealAiReview({ source, state, busy, onSend, onCancel, on
     stage === 'result'
       ? 'AI가 어림잡은 칼로리'
       : stage === 'empty'
-        ? '칼로리를 계산하지 못했어요'
+        ? '칼로리를 어림잡지 못했어요'
         : isPhoto
-          ? '사진으로 기록'
-          : 'AI로 칼로리 계산'
+          ? '사진으로 칼로리 어림잡기'
+          : 'AI로 칼로리 어림잡기'
 
   const sendNote = () => onSend(note.trim() || undefined)
 
@@ -86,7 +90,9 @@ export default function MealAiReview({ source, state, busy, onSend, onCancel, on
           }}
         >
           <div className="field">
-            <label htmlFor="mealai-note">덧붙일 말 (적지 않아도 돼요)</label>
+            <label htmlFor="mealai-note">
+              덧붙일 말<span className="ai-optional"> (안 적어도 돼요)</span>
+            </label>
             <input
               id="mealai-note"
               className="input"
@@ -102,9 +108,9 @@ export default function MealAiReview({ source, state, busy, onSend, onCancel, on
             <span aria-hidden="true">
               <AiTag />
             </span>
-            칼로리 계산
+            칼로리 어림잡기
           </button>
-          <p className="small muted">계산을 누르면 이 사진을 AI에 보내요. 누르기 전에는 보내지 않아요.</p>
+          <p className="small muted">어림잡기를 누르면 이 사진을 AI에 보내요. 누르기 전에는 보내지 않아요.</p>
           <button type="button" className="btn btn--ghost btn--block" onClick={onBack}>
             {backLabel}
           </button>
@@ -113,10 +119,11 @@ export default function MealAiReview({ source, state, busy, onSend, onCancel, on
 
       {stage === 'loading' && (
         <>
-          <AiLoading label={isPhoto ? '사진을 보고 칼로리를 계산하는 중이에요' : '적은 내용으로 칼로리를 계산하는 중이에요'} />
-          <button type="button" className="btn btn--block" onClick={onCancel}>
+          <AiLoading label={isPhoto ? '사진을 보고 칼로리를 어림잡는 중이에요' : '적은 내용으로 칼로리를 어림잡는 중이에요'} />
+          <button type="button" className="btn btn--ghost btn--block" onClick={onCancel}>
             취소
           </button>
+          <p className="small muted mealai-cancel-note">취소해도 이번 한 번은 쓴 것으로 세요.</p>
         </>
       )}
 
@@ -132,8 +139,11 @@ export default function MealAiReview({ source, state, busy, onSend, onCancel, on
       {state.status === 'done' && empty && (
         <>
           <p className="mealai-note">
-            {state.data.note.trim() || '음식을 알아보지 못했어요. 조금 더 자세히 적거나 다른 사진으로 해 주세요.'}
+            {isPhoto
+              ? '사진에서 음식을 알아보지 못했어요. 다른 사진으로 해 주세요.'
+              : '음식을 알아보지 못했어요. 무엇을 얼마나 먹었는지 조금 더 적어 주세요.'}
           </p>
+          {state.data.note.trim() && <p className="small muted">{state.data.note.trim()}</p>}
           <button type="button" className="btn btn--block" onClick={onBack}>
             {backLabel}
           </button>
@@ -141,11 +151,13 @@ export default function MealAiReview({ source, state, busy, onSend, onCancel, on
       )}
 
       {state.status === 'done' && !empty && (
-        <ResultForm data={state.data} busy={busy} backLabel={backLabel} onBack={onBack} onLog={onLog} />
+        <ResultForm data={state.data} busy={busy} savedIds={savedIds} backLabel={backLabel} onBack={onBack} onLog={onLog} />
       )}
     </section>
   )
 }
+
+const NO_IDS: readonly number[] = []
 
 interface Row {
   id: number
@@ -179,13 +191,16 @@ function toRows(data: MealEstimate): Row[] {
 interface ResultProps {
   data: MealEstimate
   busy: boolean
+  savedIds: readonly number[]
   backLabel: string
   onBack: () => void
   onLog: (items: MealAiLogItem[]) => void
 }
 
-function ResultForm({ data, busy, backLabel, onBack, onLog }: ResultProps) {
-  const [rows, setRows] = useState(() => toRows(data))
+function ResultForm({ data, busy, savedIds, backLabel, onBack, onLog }: ResultProps) {
+  const [allRows, setRows] = useState(() => toRows(data))
+  // 이미 기록한 줄은 목록에서 뺀다. 다시 기록해도 두 번 들어가지 않는다.
+  const rows = allRows.filter((r) => !savedIds.includes(r.id))
 
   const patch = (id: number, change: (r: Row) => Row) => setRows((rs) => rs.map((r) => (r.id === id ? change(r) : r)))
 
@@ -210,7 +225,7 @@ function ResultForm({ data, busy, backLabel, onBack, onLog }: ResultProps) {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (busy || tooBig || included.length === 0) return
-    onLog(included.map((r) => ({ name: r.name, kcal: rowKcal(r) })))
+    onLog(included.map((r) => ({ id: r.id, name: r.name, kcal: rowKcal(r) })))
   }
 
   return (
@@ -227,7 +242,7 @@ function ResultForm({ data, busy, backLabel, onBack, onLog }: ResultProps) {
                   <span className="mealai-item-name">{r.name}</span>
                   <span className="mealai-item-meta">
                     {r.amount && <span className="small muted">{r.amount}</span>}
-                    {r.low && <span className="chip mealai-chip">어림값</span>}
+                    {r.low && <span className="chip mealai-chip">덜 확실해요</span>}
                     {!on && (
                       <span className="small muted">{kcal > 0 ? '기록하지 않아요' : '칼로리를 적으면 기록해요'}</span>
                     )}
@@ -261,21 +276,24 @@ function ResultForm({ data, busy, backLabel, onBack, onLog }: ResultProps) {
 
       {note && <p className="mealai-note">{note}</p>}
 
-      <div className="mealai-total">
-        <span className="muted">기록할 칼로리</span>
-        <span className="mealai-total-kcal num" data-testid="mealai-total">
-          {fmtKcal(total)} kcal
-        </span>
+      {/* 합계와 기록 버튼은 목록이 길어도 늘 보이게 시트 아래에 붙여 둔다. */}
+      <div className="mealai-footer">
+        <div className="mealai-total">
+          <span className="muted">기록할 칼로리</span>
+          <span className="mealai-total-kcal num" data-testid="mealai-total">
+            {fmtKcal(total)}
+            <span className="unit">kcal</span>
+          </span>
+        </div>
+        <button
+          type="submit"
+          className="btn btn--primary btn--block btn--lg"
+          disabled={busy || tooBig || included.length === 0}
+        >
+          {included.length === 0 ? '기록할 음식을 골라 주세요' : `${included.length}건 기록하기`}
+        </button>
       </div>
-      <AiDisclaimer>AI가 어림잡은 값이라 실제와 다를 수 있어요. 숫자는 고쳐서 기록할 수 있어요.</AiDisclaimer>
-
-      <button
-        type="submit"
-        className="btn btn--primary btn--block btn--lg"
-        disabled={busy || tooBig || included.length === 0}
-      >
-        {included.length === 0 ? '기록할 음식을 골라 주세요' : `${included.length}건 기록 · ${fmtKcal(total)} kcal`}
-      </button>
+      <AiDisclaimer>실제와 다를 수 있어요. 숫자를 눌러 고칠 수 있어요.</AiDisclaimer>
       <button type="button" className="btn btn--ghost btn--block" onClick={onBack}>
         {backLabel}
       </button>

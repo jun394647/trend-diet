@@ -42,6 +42,12 @@
   gap: 16px;
 }
 
+.coach-starters-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .coach-starters {
   list-style: none;
   margin: 0;
@@ -49,6 +55,7 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* 누를 수 있는 줄임을 알리도록 글 오른쪽 끝에 화살표를 둔다. */
 .coach-starter {
   appearance: none;
   width: 100%;
@@ -58,9 +65,26 @@
   border-top: 1px solid var(--border);
   background: transparent;
   color: var(--text);
+  font: inherit;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.coach-starter > span {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.coach-starter > svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: var(--text-2);
 }
 
 .coach-starter:active {
@@ -74,6 +98,43 @@
 }
 
 /* ── 대화 ── */
+
+/* 대화 자리는 비어 있어도 그려 둔다. 그때 위아래 간격이 두 번 들어가지 않게 당긴다. */
+.coach-log:empty {
+  margin-bottom: -20px;
+}
+
+/*
+ * 스크롤을 맞추는 표식. 대화 구획의 맨 끝에 있고 자리를 차지하지 않는다.
+ * 입력창과 아래 탭에 가리지 않도록 그 높이만큼 띄워서 멈춘다.
+ */
+.coach-end {
+  height: 0;
+  margin-top: -20px;
+  scroll-margin-bottom: calc(var(--coach-composer-h, 84px) + var(--tabbar-h) + env(safe-area-inset-bottom));
+}
+
+/* 대화를 지우기 전에 한 번 묻는 줄 */
+.coach-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.coach-confirm > p {
+  flex: 1 1 12em;
+  font-weight: 600;
+}
+
+.coach-confirm-actions {
+  display: flex;
+  gap: 8px;
+}
 
 .coach-thread {
   list-style: none;
@@ -108,6 +169,8 @@
   align-self: flex-start;
   align-items: flex-start;
   max-width: 94%;
+  /* 긴 답은 첫 줄을 화면 위쪽에 맞춘다. */
+  scroll-margin-top: calc(env(safe-area-inset-top) + 12px);
 }
 
 .coach-who {
@@ -117,13 +180,6 @@
   font-size: 0.8125rem;
   font-weight: 700;
   color: var(--text-2);
-}
-
-.coach-resume {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
 }
 
 /* ── 입력창: 스크롤해도 탭 바로 위에 붙어 있다 ── */
@@ -179,4 +235,12 @@
   display: flex;
   justify-content: space-between;
   gap: 10px;
+}
+
+.coach-meta:empty {
+  display: none;
+}
+
+.coach-counter {
+  margin-left: auto;
 }

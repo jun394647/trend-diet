@@ -75,6 +75,22 @@
 }
 
 .ai-login a {
+  /* 줄 안에서도 44px 높이로 눌리게 하고, 문구 중간에서 줄이 바뀌지 않게 한다. */
+  display: inline-block;
+  white-space: nowrap;
+  padding: 12px 0;
+  margin: -12px 0;
   color: var(--accent);
   font-weight: 700;
+}
+
+.ai-login a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 라벨 안에서 '(안 적어도 돼요)'처럼 덧붙이는 말. 굵은 라벨 옆에 보통 굵기로 둔다. */
+.ai-optional {
+  font-weight: 400;
 }

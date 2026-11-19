@@ -1,66 +1,85 @@
 import { useState, type FormEvent } from 'react'
-import type { AiRequest } from '../../ai/contract'
-import { useAiCall } from '../../ai/useAiCall'
+import { useAiAvailability } from '../../ai/useAiAvailability'
 import { useStore } from '../../store'
 import type { DateStr } from '../../types'
-import { AiDisclaimer, AiErrorNote, AiLoading, AiTag } from './AiBits'
+import { AiConflictHint, AiDisclaimer, AiErrorNote, AiLimitNote, AiLoading, AiLoginHint, AiQuotaLeft, AiTag } from './AiBits'
+import { isRetryable } from './CoachCall'
 import { useCoachContext } from './CoachHooks'
+import { MAX_WISH, logSuggestion, requestSuggestions, setSuggestWish, useSuggest } from './SuggestStore'
 import './SuggestMeals.css'
 
-type SuggestRequest = Extract<AiRequest, { task: 'suggest' }>
-
-const MAX_WISH = 100
-const MAX_ROWS = 3
 const fmtKcal = (n: number) => Math.round(n).toLocaleString('ko-KR')
+const NO_MATCH = '지금은 맞는 추천을 찾지 못했어요. 바라는 점을 바꿔서 다시 해 보세요.'
 
 /**
  * 오늘 남은 양에 맞는 다음 끼 추천. 접힌 한 줄로 있다가 누르면 펼쳐진다.
  * date는 오늘이어야 한다(남은 양을 기준으로 추천하므로). 오늘이 아닐 때는 화면에서 그리지 않는다.
+ * over는 오늘 이미 범위를 넘었는지. 그때는 덜 먹으라는 말처럼 들릴 수 있어 새로 권하지 않는다.
  */
-export default function SuggestMeals({ date }: { date: DateStr }) {
+export default function SuggestMeals({ date, over = false }: { date: DateStr; over?: boolean }) {
+  const ai = useAiAvailability()
   const context = useCoachContext(date)
   const addMeal = useStore((s) => s.addMeal)
-  const { state, run } = useAiCall<SuggestRequest>()
-  const [open, setOpen] = useState(false)
-  const [wish, setWish] = useState('')
-  const [logged, setLogged] = useState<number[]>([])
+  const store = useSuggest()
+  // 저장소에 남은 것이 오늘 것이 아니면 없는 것으로 본다.
+  const mine = store.date === date
+  const rows = mine ? store.rows : null
+  const pending = mine && store.pending
+  const error = mine ? store.error : null
+  const [open, setOpen] = useState(rows !== null)
   const [logError, setLogError] = useState(false)
 
-  if (!context) return null
+  if (ai === 'off' || !context) return null
+  // 범위를 넘은 날에는 이미 받아 둔 추천만 보여 주고, 새로 권하지는 않는다.
+  if (over && rows === null) return null
+  if (ai === 'login') {
+    return (
+      <div className="suggest-hint">
+        <AiLoginHint benefit="AI 식사 추천을 받을 수 있어요" />
+      </div>
+    )
+  }
+  if (ai === 'conflict') {
+    return (
+      <div className="suggest-hint">
+        <AiConflictHint />
+      </div>
+    )
+  }
+  if (ai === 'limit' && rows === null) {
+    return (
+      <div className="suggest-hint">
+        <AiLimitNote fallback="식사는 그대로 기록할 수 있어요." />
+      </div>
+    )
+  }
 
-  const rows = state.status === 'done' ? state.data.suggestions.filter((s) => s.kcal > 0).slice(0, MAX_ROWS) : []
-  const loading = state.status === 'loading'
+  const canAsk = ai === 'ready' && !over
+  // 추천을 눌러 기록한 것 말고 다른 기록이 바뀌었으면, 남은 양이 달라져 추천이 맞지 않을 수 있다.
+  const stale = rows !== null && store.logging.length === 0 && Math.abs(context.todayKcal - store.expectedKcal) >= 0.5
+  const note = rows !== null ? store.note || (rows.length === 0 ? NO_MATCH : '') : ''
+  // 실패 안내에 '다시 시도'가 있으면 같은 일을 하는 버튼을 하나 더 두지 않는다.
+  const retryShown = error !== null && !pending && isRetryable(error)
 
-  async function ask(avoid: string[]) {
-    if (!context) return
-    setLogged([])
+  function ask() {
+    if (!context || !canAsk) return
     setLogError(false)
-    // '다른 추천'일 때는 방금 본 것을 피해 달라고 바라는 점에 덧붙인다.
-    const parts = [wish.trim(), avoid.length > 0 ? `방금 추천받은 ${avoid.join(', ')} 말고 다른 것` : ''].filter(Boolean)
-    const text = parts.join(' / ').slice(0, MAX_WISH)
-    await run({ task: 'suggest', context, ...(text ? { wish: text } : {}) })
+    void requestSuggestions(date, context)
   }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (loading) return
-    void ask(rows.map((r) => r.name))
+    ask()
   }
 
   async function onLog(index: number) {
-    const s = rows[index]
-    if (!s || logged.includes(index)) return
     setLogError(false)
-    try {
-      await addMeal({ date, kcal: Math.round(s.kcal), name: s.name, source: 'ai' })
-      setLogged((prev) => [...prev, index])
-    } catch {
-      setLogError(true)
-    }
+    const ok = await logSuggestion(index, (row, kcal) => addMeal({ date, kcal, name: row.name, source: 'ai' }))
+    if (!ok) setLogError(true)
   }
 
   return (
-    <div className="suggest">
+    <div className={`suggest${open ? ' is-open' : ''}`}>
       <button
         type="button"
         className="suggest-toggle"
@@ -84,74 +103,80 @@ export default function SuggestMeals({ date }: { date: DateStr }) {
         </svg>
       </button>
 
-      {open && (
-        <div className="suggest-body" id="suggest-body">
+      {/* 접혀 있어도 그려 두고 감추기만 한다. 버튼의 aria-controls가 없는 요소를 가리키지 않게 하려는 것. */}
+      <div className="suggest-body" id="suggest-body" hidden={!open}>
+        {canAsk && (
           <form className="suggest-form" onSubmit={onSubmit}>
             <label className="label" htmlFor="suggest-wish">
-              바라는 점 <span className="suggest-optional">(안 적어도 돼요)</span>
+              바라는 점<span className="ai-optional"> (안 적어도 돼요)</span>
             </label>
             <div className="suggest-form-row">
               <input
                 id="suggest-wish"
                 className="input"
                 type="text"
-                value={wish}
+                value={store.wish}
                 maxLength={MAX_WISH}
                 placeholder="예: 편의점에서, 따뜻한 것"
                 autoComplete="off"
                 enterKeyHint="go"
-                onChange={(e) => setWish(e.target.value)}
+                onChange={(e) => setSuggestWish(e.target.value)}
               />
-              <button type="submit" className="btn btn--primary" disabled={loading}>
-                {state.status === 'done' ? '다른 추천' : '추천 받기'}
-              </button>
+              {!retryShown && (
+                <button type="submit" className="btn" disabled={pending}>
+                  {rows !== null ? '다른 추천 받기' : '추천 받기'}
+                </button>
+              )}
             </div>
+            <p className="small muted">오늘 기록과 최근 2주 기록을 AI에 보내요.</p>
+            <AiQuotaLeft />
           </form>
+        )}
+        {ai === 'limit' && <AiLimitNote fallback="식사는 그대로 기록할 수 있어요." />}
 
-          {loading && <AiLoading label="남은 양에 맞는 식사를 찾는 중이에요" />}
+        {pending && <AiLoading label="남은 양에 맞는 식사를 찾는 중이에요" />}
 
-          {state.status === 'error' && <AiErrorNote error={state.error} onRetry={() => void ask([])} />}
+        {error !== null && !pending && <AiErrorNote error={error} onRetry={canAsk ? ask : undefined} />}
 
-          {state.status === 'done' && (
-            <>
-              {rows.length > 0 && (
-                <ul className="list suggest-list" aria-label="추천 식사">
-                  {rows.map((s, i) => {
-                    const done = logged.includes(i)
-                    return (
-                      <li key={`${i}|${s.name}`}>
-                        <div className="suggest-item">
-                          <p className="suggest-item-head">
-                            <span className="suggest-name">{s.name}</span>
-                            <span className="suggest-kcal num">{fmtKcal(s.kcal)} kcal</span>
-                          </p>
-                          <p className="small muted">{s.why}</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn suggest-log"
-                          disabled={done}
-                          aria-label={`${s.name} ${fmtKcal(s.kcal)} kcal ${done ? '기록함' : '기록'}`}
-                          onClick={() => void onLog(i)}
-                        >
-                          {done ? '기록함' : '기록'}
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-              {state.data.note && <p className="suggest-note">{state.data.note}</p>}
-              {logError && (
-                <p className="field-error" role="alert">
-                  기록하지 못했어요. 다시 시도해 주세요.
-                </p>
-              )}
-              <AiDisclaimer />
-            </>
-          )}
-        </div>
-      )}
+        {rows !== null && !pending && (
+          <>
+            {stale && rows.length > 0 && <p className="small muted">기록이 바뀌기 전의 추천이에요.</p>}
+            {rows.length > 0 && (
+              <ul className={`list suggest-list${stale ? ' is-stale' : ''}`} aria-label="추천 식사">
+                {rows.map((s, i) => {
+                  const done = store.logged.includes(i)
+                  const busy = store.logging.includes(i)
+                  return (
+                    <li key={`${i}|${s.name}`}>
+                      <div className="suggest-item">
+                        <p className="suggest-name">{s.name}</p>
+                        <p className="suggest-kcal small num">{fmtKcal(s.kcal)} kcal</p>
+                        <p className="small muted">{s.why}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn suggest-log"
+                        disabled={done || busy}
+                        aria-label={`${s.name} ${fmtKcal(s.kcal)} kcal ${done ? '기록함' : '기록'}`}
+                        onClick={() => void onLog(i)}
+                      >
+                        {done ? '기록함' : '기록'}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {note && <p className="suggest-note">{note}</p>}
+            {logError && (
+              <p className="field-error" role="alert">
+                기록하지 못했어요. 다시 시도해 주세요.
+              </p>
+            )}
+            {rows.length > 0 && <AiDisclaimer />}
+          </>
+        )}
+      </div>
     </div>
   )
 }

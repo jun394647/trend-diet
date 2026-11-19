@@ -23,8 +23,16 @@ export type ParsedEntry =
 
 const inRange = (n: number) => n >= MIN_ENTRY_KCAL && n <= MAX_ENTRY_KCAL
 
+export interface ParseEntryOptions {
+  /**
+   * 이름 뒤 숫자가 이 값보다 작으면 칼로리가 아니라 글의 일부로 본다('계란 2'는 2 kcal가 아니라 계란 두 개).
+   * 숫자만 적은 경우에는 적용하지 않는다.
+   */
+  minNamedKcal?: number
+}
+
 /** 입력 칸의 글자를 해석한다. 숫자의 쉼표와 뒤에 붙인 'kcal', '칼로리'는 무시한다. */
-export function parseEntry(raw: string): ParsedEntry {
+export function parseEntry(raw: string, options: ParseEntryOptions = {}): ParsedEntry {
   const s = raw.trim().replace(/\s+/g, ' ')
   if (s === '') return { kind: 'empty' }
   const m = /^(?:(.*\S)\s+)?(\d{1,3}(?:,\d{3})+|\d+)\s*(?:kcal|칼로리)?$/i.exec(s)
@@ -32,6 +40,7 @@ export function parseEntry(raw: string): ParsedEntry {
   const kcal = Number(m[2].replaceAll(',', ''))
   const name = m[1]?.trim()
   if (!inRange(kcal)) return name ? { kind: 'text', text: s } : { kind: 'invalid', kcal }
+  if (name && kcal < (options.minNamedKcal ?? 0)) return { kind: 'text', text: s }
   return name ? { kind: 'named', name: name.slice(0, 40), kcal } : { kind: 'kcal', kcal }
 }
 
@@ -51,6 +60,7 @@ export interface Suggestion {
 /**
  * 전에 기록한 식사와 즐겨찾기를 합쳐 자주·최근 먹은 순으로 돌려준다.
  * 이름이 없는 식사와 대충 입력은 다시 고를 대상이 아니므로 뺀다.
+ * AI가 이름 붙인 식사는 한 번뿐이면 빼고, 같은 이름을 두 번 이상 기록했을 때부터 넣는다.
  * query가 있으면 이름에 그 글자가 들어 있는 것만 남긴다.
  */
 export function mySuggestions(
@@ -60,8 +70,11 @@ export function mySuggestions(
 ): Suggestion[] {
   // 같은 이름을 여러 칼로리로 기록했으면 이름당 하나만 남긴다: 가장 자주 쓴 값, 같으면 가장 최근 값.
   const byName = new Map<string, Map<number, { count: number; lastAt: string }>>()
+  const nameCount = new Map<string, number>()
+  for (const m of args.meals) if (m.name) nameCount.set(m.name, (nameCount.get(m.name) ?? 0) + 1)
   for (const m of args.meals) {
     if (!m.name || m.source === 'rough') continue
+    if (m.source === 'ai' && (nameCount.get(m.name) ?? 0) < 2) continue
     const variants = byName.get(m.name) ?? new Map<number, { count: number; lastAt: string }>()
     const v = variants.get(m.kcal) ?? { count: 0, lastAt: '' }
     v.count++

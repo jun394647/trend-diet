@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useAiAvailability } from '../ai/useAiAvailability'
-import { AiLoginHint } from '../components/ai/AiBits'
 import WeekReviewSection from '../components/ai/WeekReviewSection'
 import { diffDays, formatKorean, today } from '../lib/date'
 import { isCheckinDue, latestCheckin } from '../lib/selectors'
@@ -77,6 +75,24 @@ function optionCopy(option: CheckinOption, review: CheckinReview): OptionCopy {
   }
 }
 
+/** AI 돌아보기에 함께 보내는, 앱이 이번에 권하는 선택지. AI의 조언이 이것과 어긋나지 않게 한다. */
+function recommendationText(option: CheckinOption): string {
+  switch (option.id) {
+    case 'maintain':
+      return '유지로 넘어가기'
+    case 'break':
+      return '2주 쉬어 가기(유지 기간)'
+    case 'resume':
+      return '감량 다시 시작'
+    case 'slower':
+      return `감량 속도를 주 ${option.weeklyLossKg}kg으로 늦추기`
+    case 'adaptive':
+      return '새 추정치에 맞춰 목표 조정'
+    case 'keep':
+      return '이번 주는 그대로'
+  }
+}
+
 export default function Checkin() {
   const profile = useStore((s) => s.profile)
   const weights = useStore((s) => s.weights)
@@ -84,7 +100,6 @@ export default function Checkin() {
   const checkins = useStore((s) => s.checkins)
   const applyCheckinOption = useStore((s) => s.applyCheckinOption)
   const navigate = useNavigate()
-  const ai = useAiAvailability()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
   const [pickedId, setPickedId] = useState<CheckinOptionId | null>(null)
@@ -265,8 +280,8 @@ export default function Checkin() {
         </p>
       )}
 
-      {ai === 'ready' && <WeekReviewSection date={asOf} />}
-      {ai === 'login' && <AiLoginHint what="AI로 돌아보기" />}
+      {/* AI를 쓸 수 없으면 스스로 숨거나, 구획 안에서 한 줄로 안내한다. */}
+      <WeekReviewSection date={asOf} recommendation={recommendationText(options[0])} />
 
       <section className="card" aria-labelledby="checkin-choice-title">
         <h2 className="card-title" id="checkin-choice-title">

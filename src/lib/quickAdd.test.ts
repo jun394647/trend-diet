@@ -21,6 +21,15 @@ describe('parseEntry', () => {
     // 이름이 있으면 숫자까지 이름의 일부로 보고 검색한다.
     expect(parseEntry('콜라 99999')).toEqual({ kind: 'text', text: '콜라 99999' })
   })
+  it('minNamedKcal보다 작은 숫자가 이름 뒤에 붙으면 칼로리가 아니라 글로 본다', () => {
+    expect(parseEntry('계란 2', { minNamedKcal: 20 })).toEqual({ kind: 'text', text: '계란 2' })
+    expect(parseEntry('바나나 19kcal', { minNamedKcal: 20 })).toEqual({ kind: 'text', text: '바나나 19kcal' })
+    expect(parseEntry('계란 20', { minNamedKcal: 20 })).toEqual({ kind: 'named', name: '계란', kcal: 20 })
+    // 숫자만 적은 것은 그대로 칼로리다.
+    expect(parseEntry('2', { minNamedKcal: 20 })).toEqual({ kind: 'kcal', kcal: 2 })
+    // 옵션을 주지 않으면 예전처럼 읽는다.
+    expect(parseEntry('계란 2')).toEqual({ kind: 'named', name: '계란', kcal: 2 })
+  })
   it('비어 있으면 empty', () => {
     expect(parseEntry('   ')).toEqual({ kind: 'empty' })
   })
@@ -73,6 +82,19 @@ describe('mySuggestions', () => {
       meal('dddd', '2026-01-04', '점심', 800),
     ]
     expect(mySuggestions({ meals: many, favorites: [] })).toMatchObject([{ name: '점심', kcal: 650, count: 4 }])
+  })
+
+  it('AI로 기록한 식사는 같은 이름을 두 번 이상 기록했을 때부터 넣는다', () => {
+    const once = [meal('a', '2026-01-01', '바나나', 90), meal('bb', '2026-01-02', '쌀밥', 300, 'ai'), meal('ccc', '2026-01-02', '계란말이', 120, 'ai')]
+    expect(mySuggestions({ meals: once, favorites: [] }).map((x) => x.name)).toEqual(['바나나'])
+    expect(mySuggestions({ meals: once, favorites: [] }, '쌀밥')).toEqual([])
+
+    const twice = [...once, meal('dddd', '2026-01-03', '쌀밥', 300, 'ai')]
+    expect(mySuggestions({ meals: twice, favorites: [] })).toMatchObject([{ name: '쌀밥', kcal: 300, count: 2 }, { name: '바나나' }])
+
+    // 직접 한 번 기록한 이름이면 AI 기록 한 건도 함께 센다.
+    const mixed = [...once, meal('eeeee', '2026-01-03', '계란말이', 130)]
+    expect(mySuggestions({ meals: mixed, favorites: [] }, '계란')).toMatchObject([{ name: '계란말이', count: 2 }])
   })
 
   it('limit만큼만 준다', () => {

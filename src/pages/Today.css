@@ -120,11 +120,6 @@
   font-weight: 600;
 }
 
-.meal-list + .ai-login,
-.card > .muted + .ai-login {
-  margin-top: 10px;
-}
-
 .meal-kcal {
   flex: 0 0 auto;
   white-space: nowrap;

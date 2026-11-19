@@ -6,9 +6,15 @@
   line-height: 1.35;
 }
 
-/* 단계가 바뀔 때 코드로만 포커스를 옮기는 자리라 테두리는 그리지 않는다. */
+/* 단계가 바뀔 때 코드로 포커스를 옮기는 자리. 키보드로 쓰는 중일 때만 옅은 테두리로 자리를 알려 준다. */
 .mealai-title:focus {
   outline: none;
+}
+
+.mealai-title:focus-visible {
+  outline: 2px solid var(--border);
+  outline-offset: 4px;
+  border-radius: 4px;
 }
 
 /* 내가 적은 글: 왼쪽 선으로만 구분한다. */
@@ -28,7 +34,13 @@
 }
 
 .mealai-photo--small {
-  max-height: 120px;
+  max-height: 72px;
+}
+
+/* 취소 아래 한 줄: 버튼과 한 덩어리로 보이게 붙인다. */
+.mealai-cancel-note {
+  margin-top: -8px;
+  text-align: center;
 }
 
 /* 강조 버튼 위에서는 AI 표시의 색을 뒤집어 보이게 한다. */
@@ -62,12 +74,37 @@
   cursor: pointer;
 }
 
+/* 체크 상자: 기기 기본 모양 대신 토큰으로 그린다. 누르는 넓이는 감싸는 label(56px)이 맡는다. */
 .mealai-item-main input {
+  appearance: none;
   flex: 0 0 auto;
+  position: relative;
+  box-sizing: border-box;
   width: 22px;
   height: 22px;
   margin: 0;
-  accent-color: var(--accent);
+  border: 2px solid var(--text-2);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.mealai-item-main input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* 체크 표시: 두 변만 그린 상자를 돌려 만든다. */
+.mealai-item-main input:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border: solid var(--accent-text);
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
 }
 
 .mealai-item-main input:focus-visible {
@@ -85,6 +122,7 @@
 .mealai-item-name {
   font-weight: 600;
   line-height: 1.35;
+  text-wrap: balance;
 }
 
 .mealai-item-meta {
@@ -108,7 +146,7 @@
 }
 
 .input.mealai-kcal-input {
-  width: 76px;
+  width: 68px;
   padding: 0 10px;
   text-align: right;
 }
@@ -128,6 +166,25 @@
   color: var(--text-2);
   background: transparent;
   border-style: dashed;
+}
+
+/*
+ * 합계와 기록 버튼. 시트 아래에 붙어 늘 보인다.
+ * 시트의 아래·옆 안쪽 여백만큼 밖으로 내보내 가장자리까지 덮고, 같은 만큼 안쪽 여백으로 되돌린다.
+ */
+.mealai-footer {
+  position: sticky;
+  bottom: calc(-20px - env(safe-area-inset-bottom));
+  z-index: 1;
+  margin-left: calc(-1 * max(var(--gutter), env(safe-area-inset-left)));
+  margin-right: calc(-1 * max(var(--gutter), env(safe-area-inset-right)));
+  padding: 12px max(var(--gutter), env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom))
+    max(var(--gutter), env(safe-area-inset-left));
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .mealai-total {

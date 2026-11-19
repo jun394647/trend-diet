@@ -24,9 +24,9 @@ export function aiErrorMessage(code: AiErrorCode | 'offline', usage?: AiUsage): 
     case 'limit':
       return `오늘 쓸 수 있는 AI 횟수${usage ? `(${usage.limit}회)` : ''}를 다 썼어요. 내일 다시 쓸 수 있어요.`
     case 'bad_request':
-      return '요청을 처리하지 못했어요. 내용을 줄여서 다시 해 주세요.'
+      return '보낸 내용을 읽지 못했어요. 글을 줄이거나 다른 사진으로 다시 해 주세요.'
     case 'refused':
-      return '이 요청에는 답하지 못했어요. 다르게 적어서 다시 해 주세요.'
+      return '이번에는 답을 받지 못했어요. 내용을 바꿔서 다시 해 주세요.'
     case 'busy':
       return '지금 응답이 늦어요. 잠시 뒤에 다시 해 주세요.'
     case 'offline':

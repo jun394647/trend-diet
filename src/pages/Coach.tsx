@@ -1,27 +1,35 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import type { AiRequest } from '../ai/contract'
+import type { CoachContext } from '../ai/contract'
 import { useAi } from '../ai/store'
 import { useAiAvailability } from '../ai/useAiAvailability'
-import { useAiCall } from '../ai/useAiCall'
-import { AiDisclaimer, AiErrorNote, AiLoading, AiTag } from '../components/ai/AiBits'
+import { AiConflictHint, AiDisclaimer, AiLimitNote, AiQuotaLeft, AiTag } from '../components/ai/AiBits'
+import { isRetryable } from '../components/ai/CoachCall'
 import { useCoachContext } from '../components/ai/CoachHooks'
-import { toHistory, useCoach, type CoachMessage } from '../components/ai/CoachStore'
+import { MAX_QUESTION, useCoach } from '../components/ai/CoachStore'
+import { ChevronRight } from '../components/today/icons'
 import { today } from '../lib/date'
 import './Coach.css'
 
-type AskRequest = Extract<AiRequest, { task: 'ask' }>
-
-const MAX_QUESTION = 500
 /** 글자 수는 한도에 가까워졌을 때만 보여 준다. */
 const COUNTER_FROM = 450
 
-const STARTERS = [
-  '체중이 며칠째 그대로인데 왜 그럴까요?',
-  '이번 주에 회식이 있는데 어떻게 하면 좋을까요?',
-  '지금 감량 속도가 저한테 맞는 걸까요?',
-  '어제 많이 먹었는데 오늘은 어떻게 할까요?',
-]
+const ABOUT = '코치는 내 체중과 섭취 기록, 지금 계획을 보고 궁금한 점에 답해 주는 AI예요.'
+
+/** 처음 화면에 보여 주는 질문 예시. 지금 단계에 맞는 것만 보여 준다. */
+function starters(phase: CoachContext['phase']): string[] {
+  return [
+    '체중이 며칠째 그대로인데 왜 그럴까요?',
+    '이번 주에 회식이 있는데 어떻게 하면 좋을까요?',
+    phase === 'maintain' ? '유지 기간에는 어떻게 먹는 게 좋을까요?' : '지금 감량 속도가 저한테 맞는 걸까요?',
+    '어제 많이 먹었는데 괜찮을까요?',
+  ]
+}
+
+/** 손가락으로 쓰는 기기인지. 그런 기기의 화면 키보드에서는 Enter가 줄바꿈이어야 한다. */
+function isCoarsePointer(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+}
 
 export default function Coach() {
   const ai = useAiAvailability()
@@ -42,9 +50,7 @@ export default function Coach() {
     return (
       <main className="page">
         <h1 className="page-title">코치</h1>
-        <p>
-          코치는 내 체중과 섭취 기록, 지금 계획을 보고 궁금한 점에 답해 주는 AI예요. 로그인하면 쓸 수 있어요.
-        </p>
+        <p>{ABOUT} 로그인하면 코치에게 궁금한 것을 물어볼 수 있어요.</p>
         <Link className="btn btn--primary btn--block btn--lg" to="/settings">
           설정에서 로그인
         </Link>
@@ -52,30 +58,56 @@ export default function Coach() {
     )
   }
 
-  return <CoachChat />
+  if (ai === 'conflict') {
+    return (
+      <main className="page">
+        <h1 className="page-title">코치</h1>
+        <p>{ABOUT}</p>
+        <AiConflictHint />
+      </main>
+    )
+  }
+
+  // 오늘 횟수를 다 써도 나눈 대화는 그대로 읽을 수 있다. 보내기만 막는다.
+  return <CoachChat limited={ai === 'limit'} />
 }
 
-function CoachChat() {
+function CoachChat({ limited }: { limited: boolean }) {
   const asOf = today()
   const context = useCoachContext(asOf)
   const messages = useCoach((s) => s.messages)
-  const add = useCoach((s) => s.add)
-  const clear = useCoach((s) => s.clear)
-  const usage = useAi((s) => s.usage)
-  const { state, run, reset } = useAiCall<AskRequest>()
-  const [draft, setDraft] = useState('')
+  const draft = useCoach((s) => s.draft)
+  const pending = useCoach((s) => s.pending)
+  const error = useCoach((s) => s.error)
+  const setDraft = useCoach((s) => s.setDraft)
+  const [confirming, setConfirming] = useState(false)
+  const [coarse] = useState(isCoarsePointer)
+  const pageRef = useRef<HTMLElement>(null)
+  const composerRef = useRef<HTMLFormElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const clearRef = useRef<HTMLButtonElement>(null)
+  const lastRef = useRef<HTMLLIElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
-  const waiting = state.status === 'loading'
-  const last: CoachMessage | undefined = messages[messages.length - 1]
+  const last = messages[messages.length - 1]
   const unanswered = last?.role === 'user'
-  const remaining = usage ? Math.max(0, usage.limit - usage.used) : null
 
-  // 새 말이 생기면 맨 아래(입력창 바로 위)가 보이게 한다. jsdom에는 scrollIntoView가 없다.
+  // 새 말이 생기면 입력창에 가리지 않게 보여 준다.
+  // 짧은 말은 대화의 끝(안내 문구까지)이 입력창 바로 위에 오게 하고,
+  // 화면보다 긴 답은 끝이 아니라 답의 첫 줄부터 읽을 수 있게 한다.
   useEffect(() => {
     if (messages.length === 0) return
+    const composer = composerRef.current
+    if (composer) pageRef.current?.style.setProperty('--coach-composer-h', `${composer.offsetHeight}px`)
+    const answer = last?.role === 'assistant' ? lastRef.current : null
+    const room = composer?.getBoundingClientRect().top ?? 0
+    if (answer && room > 0 && answer.offsetHeight > room - 16) {
+      answer.scrollIntoView?.({ block: 'start' })
+      return
+    }
+    // jsdom에는 scrollIntoView가 없다.
     endRef.current?.scrollIntoView?.({ block: 'end' })
-  }, [messages.length, state.status])
+  }, [messages.length, last, pending, error])
 
   if (!context) {
     return (
@@ -83,163 +115,200 @@ function CoachChat() {
         <h1 className="page-title">코치</h1>
         <p>아직 계획이 없어서 코치가 볼 기록이 없어요. 먼저 기본 정보를 입력해 주세요.</p>
         <Link className="btn btn--primary btn--block btn--lg" to="/">
-          홈으로 가기
+          오늘 화면으로 가기
         </Link>
       </main>
     )
   }
+  const ctx = context
 
-  async function ask(question: string, prior: CoachMessage[]) {
-    if (!context) return
-    const result = await run({ task: 'ask', context, question, history: toHistory(prior) })
-    if (result) add('assistant', result.answer)
-  }
-
-  function send(text: string) {
-    const question = text.trim().slice(0, MAX_QUESTION)
-    if (!question || waiting) return
-    const prior = useCoach.getState().messages
-    add('user', question)
-    setDraft('')
-    void ask(question, prior)
-  }
-
-  /** 답을 받지 못한 마지막 질문을 다시 보낸다. 질문을 대화에 또 넣지는 않는다. */
-  function retry() {
-    const all = useCoach.getState().messages
-    const q = all[all.length - 1]
-    if (!q || q.role !== 'user' || waiting) return
-    void ask(q.text, all.slice(0, -1))
-  }
-
-  function startOver() {
-    reset()
-    clear()
-    setDraft('')
+  function submit() {
+    if (limited) return
+    // 기다리는 중이거나 빈 글이면 저장소가 받아들이지 않는다.
+    useCoach.getState().send(ctx, draft)
   }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    send(draft)
+    submit()
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     // 한글 조합 중의 Enter는 글자를 확정하는 것이므로 보내지 않는다.
     if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+    // 화면 키보드에서는 Enter가 줄바꿈이고, 보내기는 버튼으로만 한다.
+    if (isCoarsePointer()) return
     e.preventDefault()
-    send(draft)
+    submit()
+  }
+
+  /** 예시 질문은 바로 보내지 않고 입력 칸에 넣기만 한다. 누르는 것만으로 횟수를 쓰지 않게 하려는 것. */
+  function pickStarter(q: string) {
+    setDraft(q)
+    inputRef.current?.focus()
+  }
+
+  function cancelClear() {
+    setConfirming(false)
+    clearRef.current?.focus()
+  }
+
+  function confirmClear() {
+    useCoach.getState().clear()
+    setConfirming(false)
+    inputRef.current?.focus()
   }
 
   return (
-    <main className="page coach-page">
+    <main className="page coach-page" ref={pageRef}>
       <header className="coach-head">
         <h1 className="page-title">코치</h1>
         {messages.length > 0 && (
-          <button type="button" className="btn btn--ghost coach-new" onClick={startOver}>
-            새 대화
+          <button
+            type="button"
+            ref={clearRef}
+            className="btn btn--ghost coach-new"
+            aria-expanded={confirming}
+            // 답을 기다리는 중에 지우면 돈을 들인 답이 말없이 버려진다.
+            disabled={pending || confirming}
+            onClick={() => setConfirming(true)}
+          >
+            대화 지우기
           </button>
         )}
       </header>
 
-      <div className="coach-body">
-        {messages.length === 0 ? (
-          <div className="coach-intro">
-            <p>
-              코치는 최근 2주의 체중과 섭취 기록, 지금 계획을 보고 답해요. 궁금한 것을 편하게 물어보세요.
-            </p>
-            <ul className="coach-starters" aria-label="이런 걸 물어볼 수 있어요">
-              {STARTERS.map((q) => (
-                <li key={q}>
-                  <button type="button" className="coach-starter" onClick={() => send(q)}>
-                    {q}
-                  </button>
-                </li>
-              ))}
-            </ul>
+      {confirming && messages.length > 0 && (
+        <div className="coach-confirm" role="group" aria-labelledby="coach-confirm-q">
+          <p id="coach-confirm-q">대화를 지우고 새로 시작할까요?</p>
+          <div className="coach-confirm-actions">
+            <button type="button" className="btn" autoFocus onClick={cancelClear}>
+              취소
+            </button>
+            <button type="button" className="btn btn--danger" disabled={pending} onClick={confirmClear}>
+              지우기
+            </button>
           </div>
-        ) : (
-          <ol className="coach-thread" aria-label="대화" aria-live="polite">
-            {messages.map((m) =>
-              m.role === 'user' ? (
-                <li key={m.id} className="coach-msg coach-msg--user" data-testid="coach-msg-user">
-                  <span className="coach-sr">나</span>
-                  <p className="coach-text">{m.text}</p>
-                </li>
-              ) : (
-                <li key={m.id} className="coach-msg coach-msg--coach" data-testid="coach-msg-coach">
+        </div>
+      )}
+
+      <div className="coach-body">
+        {messages.length === 0 && (
+          <div className="coach-intro">
+            <p>코치는 내 기본 정보와 최근 2주의 체중·섭취 기록, 지금 계획을 AI에 보내 답을 받아요.</p>
+            <div className="coach-starters-block">
+              <p className="small muted" id="coach-starters-caption">
+                이런 걸 물어볼 수 있어요. 누르면 입력 칸에 들어가요.
+              </p>
+              <ul className="coach-starters" aria-labelledby="coach-starters-caption">
+                {starters(ctx.phase).map((q) => (
+                  <li key={q}>
+                    <button type="button" className="coach-starter" onClick={() => pickStarter(q)}>
+                      <span>{q}</span>
+                      <ChevronRight />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* 대화 자리는 늘 그려 둔다. 그래야 첫 답도 화면 낭독기가 읽는다. 안에는 따로 알리는 역할을 두지 않는다. */}
+        <div className="coach-log" role="log" aria-live="polite" aria-label="대화">
+          {messages.length > 0 && (
+            <ol className="coach-thread">
+              {messages.map((m, i) =>
+                m.role === 'user' ? (
+                  <li key={m.id} className="coach-msg coach-msg--user" data-testid="coach-msg-user">
+                    <span className="coach-sr">나</span>
+                    <p className="coach-text">{m.text}</p>
+                  </li>
+                ) : (
+                  <li
+                    key={m.id}
+                    ref={i === messages.length - 1 ? lastRef : undefined}
+                    className="coach-msg coach-msg--coach"
+                    data-testid="coach-msg-coach"
+                  >
+                    <span className="coach-who">
+                      <AiTag /> 코치
+                    </span>
+                    <p className="coach-text">{m.text}</p>
+                  </li>
+                ),
+              )}
+              {unanswered && (pending || error !== null) && (
+                <li className="coach-msg coach-msg--coach" data-testid="coach-msg-wait">
                   <span className="coach-who">
                     <AiTag /> 코치
                   </span>
-                  <p className="coach-text">{m.text}</p>
+                  {pending ? (
+                    <p className="ai-loading">
+                      <span className="ai-loading-dots" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                      답을 쓰는 중이에요
+                    </p>
+                  ) : error !== null ? (
+                    <div className="ai-error">
+                      <p>{error.message}</p>
+                      {error.code === 'unauthorized' && (
+                        <Link className="btn" to="/settings">
+                          로그인하러 가기
+                        </Link>
+                      )}
+                      {isRetryable(error) && !limited && (
+                        <button type="button" className="btn" onClick={() => useCoach.getState().retry(ctx)}>
+                          다시 시도
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
                 </li>
-              ),
-            )}
-            {(waiting || unanswered) && (
-              <li className="coach-msg coach-msg--coach">
-                <span className="coach-who">
-                  <AiTag /> 코치
-                </span>
-                {waiting ? (
-                  <AiLoading label="답을 쓰는 중이에요" />
-                ) : state.status === 'error' ? (
-                  <AiErrorNote error={state.error} onRetry={retry} />
-                ) : state.status === 'idle' ? (
-                  // 답을 기다리다 다른 화면에 다녀온 경우.
-                  <div className="coach-resume">
-                    <p className="muted">이 질문은 아직 답을 받지 못했어요.</p>
-                    <button type="button" className="btn" onClick={retry}>
-                      다시 묻기
-                    </button>
-                  </div>
-                ) : null}
-              </li>
-            )}
-          </ol>
-        )}
+              )}
+            </ol>
+          )}
+        </div>
 
         <AiDisclaimer>
           코치의 답은 기록을 바탕으로 한 참고용이고 의학적 조언이 아니에요. 건강이 걱정되면 전문가와 상의해 주세요.
         </AiDisclaimer>
+        <div ref={endRef} className="coach-end" aria-hidden="true" />
       </div>
 
-      <form className="coach-composer" onSubmit={onSubmit}>
+      <form className="coach-composer" ref={composerRef} onSubmit={onSubmit}>
         <div className="coach-composer-row">
           <label className="coach-sr" htmlFor="coach-input">
             코치에게 물어볼 내용
           </label>
           <textarea
             id="coach-input"
+            ref={inputRef}
             className="coach-input"
             rows={1}
             value={draft}
             maxLength={MAX_QUESTION}
             placeholder="궁금한 것을 적어 주세요"
-            enterKeyHint="send"
+            enterKeyHint={coarse ? 'enter' : 'send'}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
           />
-          <button type="submit" className="btn btn--primary coach-send" disabled={waiting || draft.trim() === ''}>
+          <button type="submit" className="btn btn--primary coach-send" disabled={pending || limited || draft.trim() === ''}>
             보내기
           </button>
         </div>
-        {(remaining !== null || draft.length >= COUNTER_FROM) && (
-          <p className="coach-meta small muted">
-            <span data-testid="coach-quota">
-              {remaining !== null && (
-                <>
-                  오늘 AI를 <span className="num">{remaining}</span>번 더 쓸 수 있어요
-                </>
-              )}
+        <div className="coach-meta" data-testid="coach-meta">
+          {limited ? <AiLimitNote /> : <AiQuotaLeft />}
+          {draft.length >= COUNTER_FROM && (
+            <span className="coach-counter small muted num" data-testid="coach-counter" aria-label={`${MAX_QUESTION}자 중 ${draft.length}자`}>
+              {draft.length}/{MAX_QUESTION}
             </span>
-            {draft.length >= COUNTER_FROM && (
-              <span className="num" data-testid="coach-counter" aria-label={`${MAX_QUESTION}자 중 ${draft.length}자`}>
-                {draft.length}/{MAX_QUESTION}
-              </span>
-            )}
-          </p>
-        )}
+          )}
+        </div>
       </form>
-      <div ref={endRef} aria-hidden="true" />
     </main>
   )
 }

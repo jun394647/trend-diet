@@ -35,6 +35,7 @@ export function useAiCall<R extends AiRequest>() {
       if (controller.signal.aborted) return null
       const error = e instanceof AiError ? e : new AiError('failed')
       if (error.usage) useAi.getState().setUsage(error.usage)
+      if (error.code === 'forbidden') useAi.getState().setForbidden()
       setState({ status: 'error', error })
       return null
     }

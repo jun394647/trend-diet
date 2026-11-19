@@ -1,6 +1,19 @@
 .suggest {
-  margin-top: 6px;
+  margin-top: 8px;
   border-top: 1px solid var(--border);
+}
+
+/*
+ * 접혀 있을 때는 한 줄이 위아래 가는 선 사이 한가운데에 오게 한다.
+ * 아래 구획과의 간격(20px)을 그대로 두면 위는 붙고 아래만 벌어져 보인다.
+ */
+.suggest:not(.is-open):last-child {
+  margin-bottom: -20px;
+}
+
+/* 로그인 안내처럼 한 줄만 보여 줄 때 */
+.suggest-hint {
+  margin-top: 10px;
 }
 
 .suggest-toggle {
@@ -49,14 +62,14 @@
   padding: 4px 0 8px;
 }
 
+.suggest-body[hidden] {
+  display: none;
+}
+
 .suggest-form {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.suggest-optional {
-  font-weight: 400;
 }
 
 .suggest-form-row {
@@ -79,6 +92,12 @@
   align-items: flex-start;
 }
 
+/* 기록이 바뀌기 전의 추천은 글만 흐리게 한다. 기록 버튼은 그대로 누를 수 있다. */
+.suggest-list.is-stale .suggest-item {
+  opacity: 0.6;
+}
+
+/* 이름, 칼로리, 이유를 한 줄씩 쌓아 칼로리 자리가 줄마다 달라지지 않게 한다. */
 .suggest-item {
   flex: 1 1 0;
   min-width: 0;
@@ -87,20 +106,12 @@
   gap: 2px;
 }
 
-.suggest-item-head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0 8px;
-}
-
 .suggest-name {
   font-weight: 600;
 }
 
 .suggest-kcal {
   color: var(--text-2);
-  white-space: nowrap;
 }
 
 .suggest-log {

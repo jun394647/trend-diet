@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { addDays, today } from '../lib/date'
 import { buildInitialCheckin } from '../lib/plan'
@@ -6,7 +6,7 @@ import { buildCheckinReview } from '../lib/sustain'
 import type { CheckinOption, CheckinOptionId, CheckinReview } from '../lib/sustain'
 import { useStore } from '../store'
 import type { Checkin as CheckinRecord, MealEntry, Profile, WeightEntry } from '../types'
-import { AiError, callAi } from '../ai/client'
+import { AiError, aiErrorMessage, callAi } from '../ai/client'
 import { useAi } from '../ai/store'
 import { clearWeekReviewCache, requestWeekReview, useWeekReview } from '../components/ai/WeekReviewCache'
 import { useSync } from '../sync/store'
@@ -213,8 +213,10 @@ describe('Checkin · AI 돌아보기', () => {
     nextStep: '토요일 점심을 미리 정해 두기',
   }
   const reply = (used = 1) => ({ result, usage: { used, limit: 40 } })
-  const askName = 'AI 돌아보기 받기'
-  const intro = '최근 2주 기록을 읽고, 잘된 점과 해 볼 만한 한 가지를 짧게 적어요.'
+  const askName = 'AI로 최근 2주 돌아보기'
+  const intro = '기본 정보와 최근 2주 기록을 AI에 보내, 잘된 점과 해 볼 만한 한 가지를 짧게 받아요.'
+  const busyText = aiErrorMessage('busy')
+  const limitNote = /오늘 AI 횟수를 다 썼어요/
 
   function signIn(email = 'a@b.c') {
     useAi.setState({ configured: true, checked: true })
@@ -250,7 +252,7 @@ describe('Checkin · AI 돌아보기', () => {
     useAi.setState({ configured: true, checked: true })
     renderCheckin()
     expect(screen.queryByRole('button', { name: askName })).not.toBeInTheDocument()
-    const hint = screen.getByText(/로그인하면 AI가 지난 2주를 돌아봐 줘요/)
+    const hint = screen.getByText(/로그인하면 AI가 최근 2주를 돌아봐 줘요/)
     const section = hint.closest('section')
     expect(section).toHaveClass('card')
     expect(within(section!).getByRole('heading', { name: 'AI 돌아보기' })).toBeInTheDocument()
@@ -273,8 +275,53 @@ describe('Checkin · AI 돌아보기', () => {
     useAi.setState({ usage: { used: 40, limit: 40 }, usageDate: today() })
     renderCheckin()
     expect(screen.queryByRole('button', { name: askName })).not.toBeInTheDocument()
-    expect(screen.getByText(/오늘 AI 횟수를 다 썼어요/)).toBeInTheDocument()
+    expect(screen.getByText(limitNote)).toBeInTheDocument()
     expect(screen.getByTestId('checkin-confirm')).toBeEnabled()
+    // 받아 둔 것이 없으면 구획에는 제목과 횟수 안내만 있다.
+    const section = screen.getByRole('heading', { name: 'AI 돌아보기' }).closest('section')!
+    expect(within(section).queryByText(intro)).not.toBeInTheDocument()
+    expect(within(section).queryByRole('alert')).not.toBeInTheDocument()
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(section).getByRole('status')).toBeEmptyDOMElement()
+    expect(section.querySelector('.week-review-body')!.textContent).toBe(within(section).getByText(limitNote).textContent)
+  })
+
+  it('횟수를 다 썼다는 실패는 실패로 남기지 않고, 횟수 안내 하나만 보여 준다', async () => {
+    seed()
+    signIn()
+    mockCall.mockRejectedValueOnce(new AiError('limit', { used: 40, limit: 40 }))
+    renderCheckin()
+    fireEvent.click(screen.getByRole('button', { name: askName }))
+    expect(await screen.findByText(limitNote)).toBeInTheDocument()
+    expect(screen.getAllByText(limitNote)).toHaveLength(1)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(useWeekReview.getState().error).toBeNull()
+    expect(screen.queryByRole('button', { name: askName })).not.toBeInTheDocument()
+  })
+
+  it('실패 안내가 남아 있을 때 횟수를 다 쓰면, 실패 안내는 감추고 횟수 안내만 보여 준다', async () => {
+    seed()
+    signIn()
+    mockCall.mockRejectedValueOnce(new AiError('busy'))
+    renderCheckin()
+    fireEvent.click(screen.getByRole('button', { name: askName }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(busyText)
+
+    act(() => useAi.getState().setUsage({ used: 40, limit: 40 }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(busyText)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
+    expect(screen.getAllByText(limitNote)).toHaveLength(1)
+  })
+
+  it('횟수를 다 썼어도 오늘 받아 둔 돌아보기는 그대로 보여 준다', async () => {
+    seed()
+    signIn()
+    mockCall.mockResolvedValueOnce(reply(40))
+    renderCheckin()
+    fireEvent.click(screen.getByRole('button', { name: askName }))
+    expect(await screen.findByTestId('week-review')).toHaveTextContent('꾸준히 기록한 2주였어요')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('버튼을 누르기 전에는 호출하지 않고, 누르면 돌아본 내용을 보여 주고 한 줄 요약으로 초점을 옮긴다', async () => {
@@ -285,7 +332,11 @@ describe('Checkin · AI 돌아보기', () => {
     expect(screen.getByText(intro)).toBeInTheDocument()
     expect(mockCall).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: askName }))
+    // 구획 제목에 이미 AI 표시가 있으므로 버튼에는 글만 있고, 읽어 주는 이름에서 AI임을 밝힌다.
+    const ask = screen.getByRole('button', { name: askName })
+    expect(ask).toHaveTextContent(/^최근 2주 돌아보기$/)
+    expect(ask.querySelector('.ai-tag')).toBeNull()
+    fireEvent.click(ask)
     const body = await screen.findByTestId('week-review')
     expect(mockCall).toHaveBeenCalledTimes(1)
     const request = mockCall.mock.calls[0][0] as { recommendation?: string }
@@ -309,7 +360,7 @@ describe('Checkin · AI 돌아보기', () => {
     expect(body.compareDocumentPosition(choice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('기다리는 동안 안내 문장은 그대로 두고 버튼 자리만 바꾸며, 같은 자리(role=status)에서 결과를 알린다', async () => {
+  it('기다리는 동안 안내 문장은 그대로 두고 버튼 자리만 바꾸며, 알리는 자리(role=status)에는 기다리는 말만 둔다', async () => {
     seed()
     signIn()
     let release: (v: ReturnType<typeof reply>) => void = () => {}
@@ -326,8 +377,11 @@ describe('Checkin · AI 돌아보기', () => {
 
     release(reply())
     const body = await screen.findByTestId('week-review')
-    expect(status).toContainElement(body)
+    // 결과는 알리는 자리 밖에 두고 초점으로 알린다. 안에 두면 두 번 읽힌다.
+    expect(status).not.toContainElement(body)
+    expect(status).toBeEmptyDOMElement()
     expect(screen.getAllByRole('status')).toHaveLength(1)
+    await waitFor(() => expect(within(body).getByText('꾸준히 기록한 2주였어요')).toHaveFocus())
   })
 
   it('권하는 선택지에 따라 다른 말을 보낸다', async () => {
@@ -378,7 +432,55 @@ describe('Checkin · AI 돌아보기', () => {
     expect(mockCall).toHaveBeenCalledTimes(1)
   })
 
-  it('로그아웃하거나 다른 계정으로 바뀌면 받아 둔 돌아보기를 보여 주지 않고 기기에서도 지운다', async () => {
+  it('로그아웃했다가 같은 날 같은 계정으로 돌아오면 받아 둔 돌아보기를 다시 쓰고, 다시 호출하지 않는다', async () => {
+    seed()
+    signIn()
+    renderCheckin()
+    fireEvent.click(screen.getByRole('button', { name: askName }))
+    await screen.findByTestId('week-review')
+
+    // 로그아웃하면 화면에서는 바로 거둔다. 기기에 적어 둔 것은 계정으로 묶여 있어 그대로 둔다.
+    act(() => useSync.setState({ email: null }))
+    expect(screen.queryByTestId('week-review')).not.toBeInTheDocument()
+    expect(screen.getByText(/로그인하면 AI가 최근 2주를 돌아봐 줘요/)).toBeInTheDocument()
+    expect(localStorage.getItem('trend-diet:week-review')).toContain('a@b.c')
+
+    act(() => useSync.setState({ email: 'a@b.c' }))
+    expect(screen.getByTestId('week-review')).toHaveTextContent('꾸준히 기록한 2주였어요')
+    expect(screen.queryByRole('button', { name: askName })).not.toBeInTheDocument()
+    expect(mockCall).toHaveBeenCalledTimes(1)
+  })
+
+  it('로그아웃한 뒤 다른 계정으로 로그인하면 앞 계정의 돌아보기는 보이지 않고 기기에서도 지운다', async () => {
+    seed()
+    signIn()
+    renderCheckin()
+    fireEvent.click(screen.getByRole('button', { name: askName }))
+    await screen.findByTestId('week-review')
+
+    act(() => useSync.setState({ email: null }))
+    act(() => useSync.setState({ email: 'other@b.c' }))
+    expect(screen.queryByTestId('week-review')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: askName })).toBeInTheDocument()
+    expect(localStorage.getItem('trend-diet:week-review')).toBeNull()
+  })
+
+  it('자정을 넘겨 어제의 요청이 아직 기다리는 중이어도 오늘의 요청은 바로 보낸다', async () => {
+    const { review } = seed()
+    signIn()
+    mockCall.mockImplementationOnce(() => new Promise(() => {}))
+    const yesterday = addDays(today(), -1)
+    void requestWeekReview(yesterday, { today: yesterday } as Parameters<typeof requestWeekReview>[1])
+    expect(useWeekReview.getState().pending).toBe(true)
+
+    renderCheckin()
+    fireEvent.click(screen.getByRole('button', { name: askName }))
+    expect(mockCall).toHaveBeenCalledTimes(2)
+    expect(await screen.findByTestId('week-review')).toBeInTheDocument()
+    expect(useWeekReview.getState().key).toBe(`a@b.c|${review.asOf}`)
+  })
+
+  it('다른 계정으로 바뀌면 받아 둔 돌아보기를 보여 주지 않고 기기에서도 지운다', async () => {
     seed()
     signIn()
     renderCheckin()
@@ -425,7 +527,7 @@ describe('Checkin · AI 돌아보기', () => {
     mockCall.mockRejectedValue(new AiError('busy'))
     renderCheckin()
     fireEvent.click(screen.getByRole('button', { name: askName }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('지금 응답이 늦어요')
+    expect(await screen.findByRole('alert')).toHaveTextContent(busyText)
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: askName })).not.toBeInTheDocument()
 

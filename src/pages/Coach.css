@@ -27,6 +27,28 @@
   margin-right: -16px;
 }
 
+/* '대화 지우기' 바로 아래에 붙여, 지우지 않아도 대화가 남지 않는다는 것을 조용히 알린다. */
+.coach-keep {
+  margin-top: -12px;
+  text-align: right;
+}
+
+/* 초점을 잃지 않게 disabled 대신 aria-disabled로 막은 버튼. 모양은 .btn:disabled와 같다. */
+.coach-page .btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.coach-page .btn[aria-disabled='true']:active {
+  transform: none;
+}
+
+.coach-page .page-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
 .coach-body {
   flex: 1 1 auto;
   display: flex;
@@ -55,7 +77,10 @@
   border-bottom: 1px solid var(--border);
 }
 
-/* 누를 수 있는 줄임을 알리도록 글 오른쪽 끝에 화살표를 둔다. */
+/*
+ * 누르면 다른 화면으로 가는 줄이 아니라 입력 칸에 글을 넣는 줄이다.
+ * 그래서 화살표는 두지 않고, 누를 수 있다는 것은 강조색 글로 알린다.
+ */
 .coach-starter {
   appearance: none;
   width: 100%;
@@ -64,27 +89,12 @@
   border: 0;
   border-top: 1px solid var(--border);
   background: transparent;
-  color: var(--text);
+  color: var(--accent);
   font: inherit;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.coach-starter > span {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.coach-starter > svg {
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  color: var(--text-2);
+  display: block;
 }
 
 .coach-starter:active {
@@ -111,7 +121,8 @@
 .coach-end {
   height: 0;
   margin-top: -20px;
-  scroll-margin-bottom: calc(var(--coach-composer-h, 84px) + var(--tabbar-h) + env(safe-area-inset-bottom));
+  /* 끝의 안내 문구가 입력창에 붙어 보이지 않게 16px을 더 띄운다. */
+  scroll-margin-bottom: calc(var(--coach-composer-h, 84px) + var(--tabbar-h) + env(safe-area-inset-bottom) + 16px);
 }
 
 /* 대화를 지우기 전에 한 번 묻는 줄 */
@@ -194,6 +205,8 @@
   padding: 10px 0 12px;
   background: var(--bg);
   border-top: 1px solid var(--border);
+  /* 아래 탭은 반투명이다. 입력창 밑으로 대화 글이 비치지 않게 그 자리를 배경색으로 덮는다. */
+  box-shadow: 0 calc(var(--tabbar-h) + env(safe-area-inset-bottom)) 0 0 var(--bg);
 }
 
 .coach-composer-row {
@@ -218,6 +231,11 @@
   resize: none;
   /* 지원하는 브라우저에서는 적은 만큼 높이가 늘어난다. */
   field-sizing: content;
+}
+
+.coach-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .coach-input:focus-visible {

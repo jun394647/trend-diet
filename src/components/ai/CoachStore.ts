@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { AiError } from '../../ai/client'
 import type { CoachContext } from '../../ai/contract'
 import { useSync } from '../../sync/store'
-import { callAiOnce } from './CoachCall'
+import { callAiOnce, errorToKeep } from './CoachCall'
 
 export interface CoachMessage {
   id: number
@@ -46,7 +46,7 @@ export const useCoach = create<CoachState>((set, get) => {
       set((s) => ({ pending: false, messages: [...s.messages, { id: nextId++, role: 'assistant', text: answer }] }))
     } catch (e) {
       if (mine !== epoch) return
-      set({ pending: false, error: e as AiError })
+      set({ pending: false, error: errorToKeep(e as AiError) })
     }
   }
 

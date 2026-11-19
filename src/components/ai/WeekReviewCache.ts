@@ -3,7 +3,7 @@ import type { AiError } from '../../ai/client'
 import { WeekReviewSchema, type CoachContext, type WeekReview } from '../../ai/contract'
 import { useSync } from '../../sync/store'
 import type { DateStr } from '../../types'
-import { callAiOnce } from './CoachCall'
+import { callAiOnce, errorToKeep } from './CoachCall'
 
 /**
  * 주간 돌아보기의 요청과 결과.
@@ -61,10 +61,16 @@ export function cachedWeekReview(date: DateStr): WeekReview | null {
   return stored && stored.key === key ? stored.review : null
 }
 
-/** 돌아보기를 요청한다. 이미 기다리는 중이면 아무 일도 하지 않는다. */
+/**
+ * 돌아보기를 요청한다. 같은 계정·날짜의 요청을 이미 기다리는 중이면 아무 일도 하지 않는다.
+ * 기다리던 것이 어제의 요청이면(자정을 넘긴 경우) 그 답은 버리고 오늘 것을 새로 보낸다.
+ */
 export async function requestWeekReview(date: DateStr, context: CoachContext, recommendation?: string): Promise<void> {
   const key = weekReviewKey(useSync.getState().email, date)
-  if (!key || useWeekReview.getState().pending) return
+  if (!key) return
+  const before = useWeekReview.getState()
+  if (before.pending && before.key === key) return
+  if (before.pending) epoch++
   const mine = epoch
   useWeekReview.setState({ key, review: null, pending: true, error: null })
   try {
@@ -78,7 +84,7 @@ export async function requestWeekReview(date: DateStr, context: CoachContext, re
     useWeekReview.setState({ key, review, pending: false, error: null })
   } catch (e) {
     if (mine !== epoch) return
-    useWeekReview.setState({ key, review: null, pending: false, error: e as AiError })
+    useWeekReview.setState({ key, review: null, pending: false, error: errorToKeep(e as AiError) })
   }
 }
 
@@ -89,12 +95,14 @@ export function clearWeekReviewCache(): void {
   writeStored(null)
 }
 
-// 돌아보기는 그 계정의 기록으로 쓴 글이다. 로그아웃하거나 계정이 바뀌면 남기지 않는다.
-// 앱을 켠 직후의 로그인 복원(없음 → 같은 계정)에서는 기기에 적어 둔 것을 그대로 둔다.
+// 돌아보기는 그 계정의 기록으로 쓴 글이다. 로그아웃하거나 계정이 바뀌면 화면에서는 바로 거둔다.
+// 기기에 적어 둔 것은 계정으로 묶여 있어 다른 계정에는 보이지 않는다. 그래서 로그아웃만으로는 지우지 않고
+// (같은 날 같은 계정으로 돌아오면 다시 호출하지 않게), 다른 계정이 로그인했을 때만 지운다.
 useSync.subscribe((s, prev) => {
   if (s.email === prev.email) return
   epoch++
   useWeekReview.setState(EMPTY)
+  if (s.email === null) return
   const stored = readStored()
-  if (stored && (prev.email !== null || stored.key.slice(0, stored.key.lastIndexOf('|')) !== s.email)) writeStored(null)
+  if (stored && stored.key.slice(0, stored.key.lastIndexOf('|')) !== s.email) writeStored(null)
 })

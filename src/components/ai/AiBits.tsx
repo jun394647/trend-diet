@@ -56,11 +56,11 @@ export function AiLoginHint({ benefit, what }: { benefit?: string; what?: string
   )
 }
 
-/** 로그인은 했지만 기록을 어떻게 합칠지 정하지 않아 AI를 쓸 수 없을 때의 안내. */
+/** 로그인은 했지만 이 기기와 계정의 기록 중 어느 쪽을 쓸지 정하지 않아 AI를 쓸 수 없을 때의 안내. */
 export function AiConflictHint() {
   return (
     <p className="ai-login small muted">
-      기록을 어떻게 할지 정하면 AI를 쓸 수 있어요. <Link to="/settings">설정에서 정하기</Link>
+      이 기기와 계정의 기록 중 어느 쪽을 쓸지 정하면 AI를 쓸 수 있어요. <Link to="/settings">설정에서 정하기</Link>
     </p>
   )
 }
@@ -78,7 +78,7 @@ export function AiLimitNote({ fallback }: { fallback?: string }) {
 export function AiQuotaLeft() {
   const left = useAiQuotaLeft()
   if (left === null || left > 10 || left <= 0) return null
-  return <p className="ai-quota small muted">오늘 {left}번 남았어요</p>
+  return <p className="ai-quota small muted">AI를 오늘 {left}번 더 쓸 수 있어요</p>
 }
 
 /** AI 추정치에 항상 붙이는 한 줄. */

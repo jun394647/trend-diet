@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import type { AiError } from '../../ai/client'
 import type { CoachContext, Suggestions } from '../../ai/contract'
+import { useStore } from '../../store'
 import { useSync } from '../../sync/store'
-import type { DateStr } from '../../types'
-import { callAiOnce } from './CoachCall'
+import type { DateStr, MealEntry } from '../../types'
+import { callAiOnce, errorToKeep } from './CoachCall'
 
 export const MAX_WISH = 100
 /** 서버가 받는 '빼고 싶은 음식'의 최대 개수와 이름 길이(contract.ts와 같다). */
@@ -23,13 +24,13 @@ interface SuggestState {
   /** 화면에 보여 줄 추천(최대 3개). 아직 받은 적이 없으면 null. */
   rows: SuggestRow[] | null
   note: string
+  /** 추천을 요청할 때의 오늘 먹은 양. 여기에 추천을 눌러 기록한 양을 더한 것과 지금이 다르면 다른 기록이 바뀐 것이다. */
+  baseKcal: number
   /**
-   * 추천을 받은 뒤로 기록이 그대로라면 오늘 먹은 양이 이 값이어야 한다.
-   * 요청할 때의 먹은 양에, 추천을 눌러 기록한 양을 더한 값이다. 다르면 다른 기록이 바뀐 것이다.
+   * 눌러서 기록한 추천(rows의 순서 → 그때 만든 식사의 id).
+   * 그 식사가 지금도 기록에 있는지는 loggedRows로 본다. 지웠으면 다시 기록할 수 있다.
    */
-  expectedKcal: number
-  /** 기록한 추천(rows의 순서). */
-  logged: number[]
+  logged: Record<number, string>
   /** 지금 기록하는 중인 추천. 한 번 누른 것이 두 번 기록되지 않게 막는다. */
   logging: number[]
   /** 오늘 이미 추천받은 이름들. 다음 요청에서 빼 달라고 보낸다. 새것부터 12개까지. */
@@ -43,8 +44,8 @@ const EMPTY: SuggestState = {
   date: null,
   rows: null,
   note: '',
-  expectedKcal: 0,
-  logged: [],
+  baseKcal: 0,
+  logged: {},
   logging: [],
   avoid: [],
   wish: '',
@@ -80,10 +81,45 @@ function mergeAvoid(prev: string[], names: string[]): string[] {
   return next.slice(-MAX_AVOID)
 }
 
-/** 추천을 요청한다. 이미 기다리는 중이면 아무 일도 하지 않는다. */
+/** 식사 기록에 남는 칼로리(정수). */
+const mealKcal = (row: SuggestRow) => Math.round(row.kcal)
+
+/** 이 추천을 눌러 기록했을 때 생기는 식사와 같은 모양인지. */
+function isMealOf(m: MealEntry, row: SuggestRow, date: DateStr | null): boolean {
+  return m.source === 'ai' && m.date === date && m.kcal === mealKcal(row) && (m.name ?? '') === row.name.trim()
+}
+
+/**
+ * 추천 가운데 지금도 기록에 남아 있는 것들(rows의 순서).
+ * 기록할 때 만든 식사를 id로 찾고, id를 알아내지 못했을 때는 날짜·이름·칼로리가 같은 AI 식사로 찾는다.
+ */
+export function loggedRows(state: Pick<SuggestState, 'date' | 'rows' | 'logged'>, meals: MealEntry[]): number[] {
+  const out: number[] = []
+  for (const [key, mealId] of Object.entries(state.logged)) {
+    const index = Number(key)
+    const row = state.rows?.[index]
+    if (!row) continue
+    const found = mealId
+      ? meals.some((m) => m.id === mealId)
+      : meals.some((m) => isMealOf(m, row, state.date))
+    if (found) out.push(index)
+  }
+  return out
+}
+
+/** 추천을 받은 뒤로 다른 기록이 그대로라면 오늘 먹은 양이 이 값이어야 한다. */
+export function expectedKcal(state: Pick<SuggestState, 'date' | 'rows' | 'logged' | 'baseKcal'>, meals: MealEntry[]): number {
+  return loggedRows(state, meals).reduce((sum, i) => sum + mealKcal(state.rows![i]), state.baseKcal)
+}
+
+/**
+ * 추천을 요청한다. 같은 날의 요청을 이미 기다리는 중이면 아무 일도 하지 않는다.
+ * 기다리던 것이 어제의 요청이면(자정을 넘긴 경우) 그 답은 버리고 오늘 것을 새로 보낸다.
+ */
 export async function requestSuggestions(date: DateStr, context: CoachContext): Promise<void> {
   const before = useSuggest.getState()
-  if (before.pending) return
+  if (before.pending && before.date === date) return
+  if (before.pending) epoch++
   // 어제의 추천과 피할 이름은 오늘로 가져오지 않는다.
   const base = before.date === date ? before : { ...EMPTY, wish: before.wish }
   const wish = base.wish.trim()
@@ -101,8 +137,8 @@ export async function requestSuggestions(date: DateStr, context: CoachContext): 
     useSuggest.setState((s) => ({
       rows,
       note: result.note,
-      expectedKcal: context.todayKcal,
-      logged: [],
+      baseKcal: context.todayKcal,
+      logged: {},
       logging: [],
       avoid: mergeAvoid(
         s.avoid,
@@ -114,21 +150,22 @@ export async function requestSuggestions(date: DateStr, context: CoachContext): 
   } catch (e) {
     if (mine !== epoch) return
     // 앞서 받은 추천이 있으면 그대로 둔다.
-    useSuggest.setState({ pending: false, error: e as AiError })
+    useSuggest.setState({ pending: false, error: errorToKeep(e as AiError) })
   }
 }
 
 /**
  * 추천 하나를 기록한다. log는 실제로 식사를 저장하는 일.
- * 이미 기록했거나 기록하는 중이면 아무 일도 하지 않는다. 저장하지 못하면 false.
+ * 이미 기록해 둔 것이 남아 있거나 기록하는 중이면 아무 일도 하지 않는다. 저장하지 못하면 false.
  */
 export async function logSuggestion(index: number, log: (row: SuggestRow, kcal: number) => Promise<unknown>): Promise<boolean> {
   const s = useSuggest.getState()
   const row = s.rows?.[index]
-  if (!row || s.logged.includes(index) || s.logging.includes(index)) return true
+  if (!row || s.logging.includes(index) || loggedRows(s, useStore.getState().meals).includes(index)) return true
   const mine = epoch
   const rows = s.rows
-  const kcal = Math.round(row.kcal)
+  const kcal = mealKcal(row)
+  const known = new Set(useStore.getState().meals.map((m) => m.id))
   useSuggest.setState({ logging: [...s.logging, index] })
   let ok = true
   try {
@@ -138,9 +175,13 @@ export async function logSuggestion(index: number, log: (row: SuggestRow, kcal: 
   }
   // 기다리는 사이에 추천이 바뀌었으면 그 목록의 표시는 건드리지 않는다.
   if (mine !== epoch || useSuggest.getState().rows !== rows) return ok
+  // 방금 생긴 식사를 기억해 둔다. 나중에 그 식사를 지우면 이 추천을 다시 기록할 수 있다.
+  const created = useStore
+    .getState()
+    .meals.find((m) => !known.has(m.id) && isMealOf(m, row, s.date))
   useSuggest.setState((cur) => ({
     logging: cur.logging.filter((i) => i !== index),
-    ...(ok ? { logged: [...cur.logged, index], expectedKcal: cur.expectedKcal + kcal } : {}),
+    ...(ok ? { logged: { ...cur.logged, [index]: created?.id ?? '' } } : {}),
   }))
   return ok
 }

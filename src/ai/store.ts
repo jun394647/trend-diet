@@ -14,10 +14,17 @@ export interface AiState {
   usageDate: string | null
   /** 서버가 이 계정은 AI 기능을 쓸 수 없다고 답했다. 계정이 바뀌면 다시 false가 된다. */
   forbidden: boolean
-  check: () => Promise<void>
+  /** 서버 상태를 확인한다. 이미 확인했으면 다시 하지 않는다. force를 주면 오늘 쓴 횟수를 다시 받아 온다. */
+  check: (force?: boolean) => Promise<void>
   setUsage: (usage: AiUsage) => void
   setForbidden: (forbidden?: boolean) => void
 }
+
+/** 가장 마지막에 시작한 확인만 사용량을 쓴다. */
+let checkSeq = 0
+/** 지금 진행 중인 확인의 수. */
+let checking = 0
+const isStale = (usageDate: string | null) => usageDate !== null && usageDate !== today()
 
 export const useAi = create<AiState>((set, get) => ({
   configured: false,
@@ -25,19 +32,44 @@ export const useAi = create<AiState>((set, get) => ({
   usage: null,
   usageDate: null,
   forbidden: false,
-  check: async () => {
-    if (get().checked) return
-    const status = await fetchAiStatus()
-    set({ configured: status.configured, checked: true })
+  check: async (force = false) => {
+    if (get().checked && !force) return
+    const mine = ++checkSeq
+    // 사용량은 계정마다 다르다. 기다리는 사이에 계정이 바뀌면 받은 횟수는 쓰지 않는다.
+    const email = useSync.getState().email
+    checking++
+    let status: Awaited<ReturnType<typeof fetchAiStatus>>
+    try {
+      status = await fetchAiStatus()
+    } finally {
+      checking--
+    }
+    // 다시 확인할 때는 횟수만 고친다. 확인에 실패했다고 쓰던 기능을 끄지는 않는다.
+    if (!force || status.configured === true) set({ configured: status.configured === true, checked: true })
+    if (mine !== checkSeq || useSync.getState().email !== email) return
+    if (typeof status.used === 'number' && status.dailyLimit > 0) {
+      set({ usage: { used: status.used, limit: status.dailyLimit }, usageDate: today() })
+    } else if (isStale(get().usageDate)) {
+      set({ usage: null, usageDate: null })
+    }
   },
   setUsage: (usage) => set({ usage, usageDate: today() }),
   setForbidden: (forbidden = true) => set({ forbidden }),
 }))
 
-// 사용량과 사용 가능 여부는 계정마다 다르다. 로그아웃하거나 계정이 바뀌면 지운다.
+// 사용량과 사용 가능 여부는 계정마다 다르다. 로그인·로그아웃하거나 계정이 바뀌면 언제나 지우고,
+// 로그인한 계정이 있으면 그 계정이 오늘 쓴 횟수를 다시 받아 온다.
 useSync.subscribe((s, prev) => {
-  if (prev.email !== null && s.email !== prev.email) useAi.setState({ usage: null, usageDate: null, forbidden: false })
+  if (s.email === prev.email) return
+  useAi.setState({ usage: null, usageDate: null, forbidden: false })
+  // 앱이 아직 한 번도 확인하지 않았다면 첫 확인이 곧 온다. 그때 받아 온다.
+  if (s.email !== null && (useAi.getState().checked || checking > 0)) void useAi.getState().check(true)
 })
+
+/** 알고 있는 사용량이 어제 것이면 다시 받아 온다. 화면이 AI 상태를 읽을 때 부른다. */
+export function refreshAiUsageIfStale(): void {
+  if (isStale(useAi.getState().usageDate) && checking === 0) void useAi.getState().check(true)
+}
 
 /** 오늘 남은 AI 횟수. 아직 한 번도 부르지 않아 모르면 null. */
 export function quotaLeft(usage: AiUsage | null | undefined): number | null {

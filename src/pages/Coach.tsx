@@ -7,14 +7,14 @@ import { AiConflictHint, AiDisclaimer, AiLimitNote, AiQuotaLeft, AiTag } from '.
 import { isRetryable } from '../components/ai/CoachCall'
 import { useCoachContext } from '../components/ai/CoachHooks'
 import { MAX_QUESTION, useCoach } from '../components/ai/CoachStore'
-import { ChevronRight } from '../components/today/icons'
 import { today } from '../lib/date'
+import { useSync } from '../sync/store'
 import './Coach.css'
 
 /** 글자 수는 한도에 가까워졌을 때만 보여 준다. */
 const COUNTER_FROM = 450
 
-const ABOUT = '코치는 내 체중과 섭취 기록, 지금 계획을 보고 궁금한 점에 답해 주는 AI예요.'
+const ABOUT = '코치는 내 체중과 식사 기록, 지금 계획을 보고 궁금한 점에 답해 주는 AI예요.'
 
 /** 처음 화면에 보여 주는 질문 예시. 지금 단계에 맞는 것만 보여 준다. */
 function starters(phase: CoachContext['phase']): string[] {
@@ -34,10 +34,28 @@ function isCoarsePointer(): boolean {
 export default function Coach() {
   const ai = useAiAvailability()
   const checked = useAi((s) => s.checked)
+  const forbidden = useAi((s) => s.forbidden)
+  const sessionKnown = useSync((s) => s.ready)
+  // 이 화면을 쓰던 중에 서버가 '이 계정은 쓸 수 없다'고 답했는지 보려고, 쓸 수 있었던 적이 있는지 기억한다.
+  const [wasUsable, setWasUsable] = useState(false)
+  if (ai !== 'off' && !wasUsable) setWasUsable(true)
 
   if (ai === 'off') {
-    // 준비 여부를 아직 확인하는 중이면 기다리고, 준비되지 않은 게 확실하면 홈으로 보낸다.
-    if (checked) return <Navigate to="/" replace />
+    // 대화하던 중에 막혔으면 말없이 홈으로 보내지 않고, 이 자리에서 한 번 알린다.
+    // 다른 화면에 다녀오면 처음부터 막힌 것과 같아 홈으로 보낸다.
+    if (forbidden && wasUsable) {
+      return (
+        <main className="page">
+          <h1 className="page-title">코치</h1>
+          <p role="alert">이 계정은 AI 기능을 쓸 수 없어요.</p>
+          <Link className="btn btn--primary btn--block btn--lg" to="/">
+            오늘 화면으로 가기
+          </Link>
+        </main>
+      )
+    }
+    // 준비 여부나 로그인 상태를 아직 확인하는 중이면 기다리고, 준비되지 않은 게 확실하면 홈으로 보낸다.
+    if (checked && sessionKnown) return <Navigate to="/" replace />
     return (
       <main className="page">
         <h1 className="page-title">코치</h1>
@@ -85,12 +103,15 @@ function CoachChat({ limited }: { limited: boolean }) {
   const pageRef = useRef<HTMLElement>(null)
   const composerRef = useRef<HTMLFormElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const titleRef = useRef<HTMLHeadingElement>(null)
   const clearRef = useRef<HTMLButtonElement>(null)
   const lastRef = useRef<HTMLLIElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
   const last = messages[messages.length - 1]
   const unanswered = last?.role === 'user'
+  // 횟수를 다 썼을 때는 횟수 안내만 보여 준다. 앞서 남은 실패 안내를 대화에 두지 않는다.
+  const shownError = limited ? null : error
 
   // 새 말이 생기면 입력창에 가리지 않게 보여 준다.
   // 짧은 말은 대화의 끝(안내 문구까지)이 입력창 바로 위에 오게 하고,
@@ -107,7 +128,7 @@ function CoachChat({ limited }: { limited: boolean }) {
     }
     // jsdom에는 scrollIntoView가 없다.
     endRef.current?.scrollIntoView?.({ block: 'end' })
-  }, [messages.length, last, pending, error])
+  }, [messages.length, last, pending, shownError])
 
   if (!context) {
     return (
@@ -121,6 +142,8 @@ function CoachChat({ limited }: { limited: boolean }) {
     )
   }
   const ctx = context
+
+  const cannotSend = pending || limited || draft.trim() === ''
 
   function submit() {
     if (limited) return
@@ -144,39 +167,52 @@ function CoachChat({ limited }: { limited: boolean }) {
 
   /** 예시 질문은 바로 보내지 않고 입력 칸에 넣기만 한다. 누르는 것만으로 횟수를 쓰지 않게 하려는 것. */
   function pickStarter(q: string) {
-    setDraft(q)
+    // 이미 적어 둔 글이 있으면 덮어쓰지 않고 다음 줄에 덧붙인다.
+    setDraft(draft.trim() === '' ? q : `${draft.replace(/\s+$/, '')}\n${q}`)
     inputRef.current?.focus()
+  }
+
+  function toggleConfirm() {
+    // 답을 기다리는 중에 지우면 돈을 들인 답이 말없이 버려진다.
+    if (pending) return
+    setConfirming((v) => !v)
   }
 
   function cancelClear() {
     setConfirming(false)
+    // 이 버튼은 disabled가 아니라 aria-disabled로만 막으므로 언제든 초점을 받을 수 있다.
     clearRef.current?.focus()
   }
 
   function confirmClear() {
+    if (pending) return
     useCoach.getState().clear()
     setConfirming(false)
-    inputRef.current?.focus()
+    // 횟수를 다 써서 입력 칸이 막혀 있으면 초점이 사라지지 않게 제목으로 보낸다.
+    ;(limited ? titleRef : inputRef).current?.focus()
   }
 
   return (
     <main className="page coach-page" ref={pageRef}>
       <header className="coach-head">
-        <h1 className="page-title">코치</h1>
+        <h1 className="page-title" ref={titleRef} tabIndex={-1}>
+          코치
+        </h1>
         {messages.length > 0 && (
           <button
             type="button"
             ref={clearRef}
             className="btn btn--ghost coach-new"
             aria-expanded={confirming}
-            // 답을 기다리는 중에 지우면 돈을 들인 답이 말없이 버려진다.
-            disabled={pending || confirming}
-            onClick={() => setConfirming(true)}
+            // 초점을 잃지 않게 disabled 대신 aria-disabled로 막고, 누르는 쪽에서 한 번 더 막는다.
+            aria-disabled={pending}
+            onClick={toggleConfirm}
           >
             대화 지우기
           </button>
         )}
       </header>
+      {messages.length > 0 && <p className="small muted coach-keep">대화는 앱을 새로 열면 지워져요.</p>}
 
       {confirming && messages.length > 0 && (
         <div className="coach-confirm" role="group" aria-labelledby="coach-confirm-q">
@@ -185,7 +221,7 @@ function CoachChat({ limited }: { limited: boolean }) {
             <button type="button" className="btn" autoFocus onClick={cancelClear}>
               취소
             </button>
-            <button type="button" className="btn btn--danger" disabled={pending} onClick={confirmClear}>
+            <button type="button" className="btn btn--danger" aria-disabled={pending} onClick={confirmClear}>
               지우기
             </button>
           </div>
@@ -195,22 +231,24 @@ function CoachChat({ limited }: { limited: boolean }) {
       <div className="coach-body">
         {messages.length === 0 && (
           <div className="coach-intro">
-            <p>코치는 내 기본 정보와 최근 2주의 체중·섭취 기록, 지금 계획을 AI에 보내 답을 받아요.</p>
-            <div className="coach-starters-block">
-              <p className="small muted" id="coach-starters-caption">
-                이런 걸 물어볼 수 있어요. 누르면 입력 칸에 들어가요.
-              </p>
-              <ul className="coach-starters" aria-labelledby="coach-starters-caption">
-                {starters(ctx.phase).map((q) => (
-                  <li key={q}>
-                    <button type="button" className="coach-starter" onClick={() => pickStarter(q)}>
-                      <span>{q}</span>
-                      <ChevronRight />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <p>코치는 내 기본 정보와 최근 2주의 체중·식사 기록, 지금 계획을 AI에 보내 답을 받아요.</p>
+            {/* 횟수를 다 썼으면 오늘은 보낼 수 없으니 예시 질문도 권하지 않는다. */}
+            {!limited && (
+              <div className="coach-starters-block">
+                <p className="small muted" id="coach-starters-caption">
+                  이런 걸 물어볼 수 있어요. 누르면 입력 칸에 들어가요.
+                </p>
+                <ul className="coach-starters" aria-labelledby="coach-starters-caption">
+                  {starters(ctx.phase).map((q) => (
+                    <li key={q}>
+                      <button type="button" className="coach-starter" onClick={() => pickStarter(q)}>
+                        {q}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
 
@@ -238,7 +276,7 @@ function CoachChat({ limited }: { limited: boolean }) {
                   </li>
                 ),
               )}
-              {unanswered && (pending || error !== null) && (
+              {unanswered && (pending || shownError !== null) && (
                 <li className="coach-msg coach-msg--coach" data-testid="coach-msg-wait">
                   <span className="coach-who">
                     <AiTag /> 코치
@@ -252,15 +290,15 @@ function CoachChat({ limited }: { limited: boolean }) {
                       </span>
                       답을 쓰는 중이에요
                     </p>
-                  ) : error !== null ? (
+                  ) : shownError !== null ? (
                     <div className="ai-error">
-                      <p>{error.message}</p>
-                      {error.code === 'unauthorized' && (
+                      <p>{shownError.message}</p>
+                      {shownError.code === 'unauthorized' && (
                         <Link className="btn" to="/settings">
-                          로그인하러 가기
+                          설정에서 로그인
                         </Link>
                       )}
-                      {isRetryable(error) && !limited && (
+                      {isRetryable(shownError) && (
                         <button type="button" className="btn" onClick={() => useCoach.getState().retry(ctx)}>
                           다시 시도
                         </button>
@@ -291,19 +329,21 @@ function CoachChat({ limited }: { limited: boolean }) {
             rows={1}
             value={draft}
             maxLength={MAX_QUESTION}
-            placeholder="궁금한 것을 적어 주세요"
+            placeholder={limited ? '내일 다시 물어볼 수 있어요' : '궁금한 것을 적어 주세요'}
+            disabled={limited}
             enterKeyHint={coarse ? 'enter' : 'send'}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
           />
-          <button type="submit" className="btn btn--primary coach-send" disabled={pending || limited || draft.trim() === ''}>
+          {/* 보낸 직후에도 초점을 잃지 않게 disabled 대신 aria-disabled로 막는다. 보내는 쪽과 저장소가 한 번 더 막는다. */}
+          <button type="submit" className="btn btn--primary coach-send" aria-disabled={cannotSend}>
             보내기
           </button>
         </div>
         <div className="coach-meta" data-testid="coach-meta">
           {limited ? <AiLimitNote /> : <AiQuotaLeft />}
           {draft.length >= COUNTER_FROM && (
-            <span className="coach-counter small muted num" data-testid="coach-counter" aria-label={`${MAX_QUESTION}자 중 ${draft.length}자`}>
+            <span className="coach-counter small muted num" data-testid="coach-counter">
               {draft.length}/{MAX_QUESTION}
             </span>
           )}

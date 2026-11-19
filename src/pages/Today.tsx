@@ -20,7 +20,7 @@ import './Today.css'
 
 function mealLabel(m: MealEntry): string {
   if (m.name) return m.name
-  return m.source === 'rough' ? '대충 입력' : '식사'
+  return m.source === 'rough' ? '대충 기록' : '식사'
 }
 
 export default function Today() {

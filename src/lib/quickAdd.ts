@@ -18,15 +18,20 @@ export type ParsedEntry =
   | { kind: 'named'; name: string; kcal: number }
   /** 숫자가 범위를 벗어났다. */
   | { kind: 'invalid'; kcal: number }
-  /** 이름만 적었다(검색어). */
-  | { kind: 'text'; text: string }
+  /**
+   * 이름 뒤에 작은 숫자만 붙였다('계란 2'). 칼로리인지 양인지 알 수 없어, 어느 쪽인지 사용자가 고르게 한다.
+   * minNamedKcal을 줬을 때만 나온다.
+   */
+  | { kind: 'ambiguous'; name: string; kcal: number; text: string }
+  /** 이름만 적었다(검색어). outOfRange는 이름 뒤에 범위를 벗어난 숫자를 붙였을 때 true다('회식 6000'). */
+  | { kind: 'text'; text: string; outOfRange?: boolean }
 
 const inRange = (n: number) => n >= MIN_ENTRY_KCAL && n <= MAX_ENTRY_KCAL
 
 export interface ParseEntryOptions {
   /**
-   * 이름 뒤 숫자가 이 값보다 작으면 칼로리가 아니라 글의 일부로 본다('계란 2'는 2 kcal가 아니라 계란 두 개).
-   * 숫자만 적은 경우에는 적용하지 않는다.
+   * 이름 뒤 숫자가 이 값보다 작으면 칼로리인지 양인지 알 수 없는 것으로 본다('계란 2'는 계란 두 개일 수 있다).
+   * 숫자만 적은 경우와, 'kcal'·'칼로리'를 붙여 칼로리라고 밝힌 경우('제로콜라 5kcal')에는 적용하지 않는다.
    */
   minNamedKcal?: number
 }
@@ -35,12 +40,15 @@ export interface ParseEntryOptions {
 export function parseEntry(raw: string, options: ParseEntryOptions = {}): ParsedEntry {
   const s = raw.trim().replace(/\s+/g, ' ')
   if (s === '') return { kind: 'empty' }
-  const m = /^(?:(.*\S)\s+)?(\d{1,3}(?:,\d{3})+|\d+)\s*(?:kcal|칼로리)?$/i.exec(s)
+  const m = /^(?:(.*\S)\s+)?(\d{1,3}(?:,\d{3})+|\d+)\s*(kcal|칼로리)?$/i.exec(s)
   if (!m) return { kind: 'text', text: s }
   const kcal = Number(m[2].replaceAll(',', ''))
   const name = m[1]?.trim()
-  if (!inRange(kcal)) return name ? { kind: 'text', text: s } : { kind: 'invalid', kcal }
-  if (name && kcal < (options.minNamedKcal ?? 0)) return { kind: 'text', text: s }
+  const explicit = m[3] !== undefined
+  if (!inRange(kcal)) return name ? { kind: 'text', text: s, outOfRange: true } : { kind: 'invalid', kcal }
+  if (name && !explicit && kcal < (options.minNamedKcal ?? 0)) {
+    return { kind: 'ambiguous', name: name.slice(0, 40), kcal, text: s }
+  }
   return name ? { kind: 'named', name: name.slice(0, 40), kcal } : { kind: 'kcal', kcal }
 }
 
@@ -59,7 +67,7 @@ export interface Suggestion {
 
 /**
  * 전에 기록한 식사와 즐겨찾기를 합쳐 자주·최근 먹은 순으로 돌려준다.
- * 이름이 없는 식사와 대충 입력은 다시 고를 대상이 아니므로 뺀다.
+ * 이름이 없는 식사와 대충 기록은 다시 고를 대상이 아니므로 뺀다.
  * AI가 이름 붙인 식사는 한 번뿐이면 빼고, 같은 이름을 두 번 이상 기록했을 때부터 넣는다.
  * query가 있으면 이름에 그 글자가 들어 있는 것만 남긴다.
  */

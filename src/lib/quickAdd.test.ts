@@ -18,17 +18,32 @@ describe('parseEntry', () => {
   it('범위를 벗어난 숫자는 기록하지 않는다', () => {
     expect(parseEntry('0')).toEqual({ kind: 'invalid', kcal: 0 })
     expect(parseEntry('99999')).toEqual({ kind: 'invalid', kcal: 99999 })
-    // 이름이 있으면 숫자까지 이름의 일부로 보고 검색한다.
-    expect(parseEntry('콜라 99999')).toEqual({ kind: 'text', text: '콜라 99999' })
+    // 이름이 있으면 숫자까지 이름의 일부로 보고 검색한다. 범위를 벗어났다는 표시를 함께 준다.
+    expect(parseEntry('콜라 99999')).toEqual({ kind: 'text', text: '콜라 99999', outOfRange: true })
+    expect(parseEntry('회식 6000', { minNamedKcal: 20 })).toEqual({ kind: 'text', text: '회식 6000', outOfRange: true })
+    expect(parseEntry('제로콜라 0kcal')).toEqual({ kind: 'text', text: '제로콜라 0kcal', outOfRange: true })
+    // 숫자로 끝나지 않는 글에는 표시가 없다.
+    expect(parseEntry('김치찌개')).not.toHaveProperty('outOfRange')
   })
-  it('minNamedKcal보다 작은 숫자가 이름 뒤에 붙으면 칼로리가 아니라 글로 본다', () => {
-    expect(parseEntry('계란 2', { minNamedKcal: 20 })).toEqual({ kind: 'text', text: '계란 2' })
-    expect(parseEntry('바나나 19kcal', { minNamedKcal: 20 })).toEqual({ kind: 'text', text: '바나나 19kcal' })
+  it('minNamedKcal보다 작은 숫자만 이름 뒤에 붙으면 칼로리인지 양인지 알 수 없는 것으로 본다', () => {
+    expect(parseEntry('계란 2', { minNamedKcal: 20 })).toEqual({ kind: 'ambiguous', name: '계란', kcal: 2, text: '계란 2' })
+    expect(parseEntry(' 아메리카노   10 ', { minNamedKcal: 20 })).toEqual({
+      kind: 'ambiguous',
+      name: '아메리카노',
+      kcal: 10,
+      text: '아메리카노 10',
+    })
     expect(parseEntry('계란 20', { minNamedKcal: 20 })).toEqual({ kind: 'named', name: '계란', kcal: 20 })
     // 숫자만 적은 것은 그대로 칼로리다.
     expect(parseEntry('2', { minNamedKcal: 20 })).toEqual({ kind: 'kcal', kcal: 2 })
     // 옵션을 주지 않으면 예전처럼 읽는다.
     expect(parseEntry('계란 2')).toEqual({ kind: 'named', name: '계란', kcal: 2 })
+  })
+  it('kcal이나 칼로리를 붙여 밝힌 숫자는 아무리 작아도 칼로리로 기록한다', () => {
+    expect(parseEntry('제로콜라 5kcal', { minNamedKcal: 20 })).toEqual({ kind: 'named', name: '제로콜라', kcal: 5 })
+    expect(parseEntry('바나나 19 kcal', { minNamedKcal: 20 })).toEqual({ kind: 'named', name: '바나나', kcal: 19 })
+    expect(parseEntry('곤약젤리 6칼로리', { minNamedKcal: 20 })).toEqual({ kind: 'named', name: '곤약젤리', kcal: 6 })
+    expect(parseEntry('제로콜라 5KCAL', { minNamedKcal: 20 })).toEqual({ kind: 'named', name: '제로콜라', kcal: 5 })
   })
   it('비어 있으면 empty', () => {
     expect(parseEntry('   ')).toEqual({ kind: 'empty' })
@@ -51,6 +66,7 @@ describe('mySuggestions', () => {
     meal('c', '2026-01-03', '김치찌개', 550),
     meal('d', '2026-01-03', undefined, 400),
     meal('e', '2026-01-03', '대충 입력 · 보통', 600, 'rough'),
+    meal('g', '2026-01-03', '대충 기록 · 가볍게', 400, 'rough'),
     meal('f', '2026-01-04', '김치찌개', 480),
   ]
   const favorites: Favorite[] = [
@@ -65,9 +81,10 @@ describe('mySuggestions', () => {
     expect(s[1]).toMatchObject({ count: 2, favoriteId: 'f1', inHistory: true })
     expect(s[2]).toMatchObject({ favoriteId: 'f2', inHistory: false })
   })
-  it('이름 없는 식사와 대충 입력은 넣지 않는다', () => {
+  it('이름 없는 식사와 대충 기록은(예전 이름으로 남은 것도) 넣지 않는다', () => {
     const names = mySuggestions({ meals, favorites }).map((x) => x.name)
     expect(names).not.toContain('대충 입력 · 보통')
+    expect(names).not.toContain('대충 기록 · 가볍게')
     expect(names.every(Boolean)).toBe(true)
   })
   it('검색어가 있으면 이름에 들어 있는 것만 남긴다', () => {

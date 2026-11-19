@@ -1,10 +1,17 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { addDays, today } from '../lib/date'
+import { loadFoodDb } from '../lib/foodDb'
 import type { FoodDbFile } from '../lib/foodSearch'
 import { roughKcal } from '../lib/selectors'
 import { useStore } from '../store'
 import type { Profile } from '../types'
 import MealSheet from './MealSheet'
+
+// 음식 목록은 한 번 받으면 남는다. 불러오지 못한 경우를 볼 때만 한 번 실패하게 한다.
+vi.mock('../lib/foodDb', async (original) => {
+  const real = await original<typeof import('../lib/foodDb')>()
+  return { ...real, loadFoodDb: vi.fn(real.loadFoodDb) }
+})
 
 const file: FoodDbFile = {
   source: '테스트',
@@ -163,9 +170,26 @@ describe('음식 목록에서 찾기', () => {
     expect(screen.getByLabelText('음식 이름이나 칼로리')).toHaveValue('바나나')
   })
 
-  it('맞는 음식이 없으면 숫자를 붙이라고 안내한다', async () => {
+  it('맞는 음식이 없으면 짧게 알리고, 막다른 화면이 되지 않게 대충 기록을 함께 보여 준다', async () => {
     open()
     type('없는음식')
+    // 찾아보기 전에는 대충 기록을 보여 주지 않는다.
+    expect(screen.queryByRole('button', { name: /^보통/ })).not.toBeInTheDocument()
+    expect(await screen.findByText("'없는음식'에 맞는 음식이 없어요. 포장 가공식품은 들어 있지 않아요.")).toBeInTheDocument()
+    // 숫자를 붙이라는 말은 입력 칸 아래 안내에서 한 번만 한다.
+    expect(screen.getAllByText(/숫자를 붙여/)).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: /^보통/ }))
+    await waitFor(() => expect(meals()).toHaveLength(1))
+    expect(meals()[0]).toMatchObject({ name: '대충 기록 · 보통', source: 'rough' })
+  })
+
+  it('음식 목록을 불러오지 못하면 없다고 하지 않고 다시 불러오게 한다', async () => {
+    vi.mocked(loadFoodDb).mockRejectedValueOnce(new Error('offline'))
+    open()
+    type('아무음식')
+    expect(await screen.findByText(/음식 목록을 불러오지 못했어요/)).toBeInTheDocument()
+    expect(screen.queryByText(/맞는 음식이 없어요/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '다시 불러오기' }))
     expect(await screen.findByText(/맞는 음식이 없어요/)).toBeInTheDocument()
   })
 })
@@ -175,7 +199,43 @@ describe('대충 기록과 닫기', () => {
     open()
     fireEvent.click(screen.getByRole('button', { name: /^보통/ }))
     await waitFor(() => expect(meals()).toHaveLength(1))
-    expect(meals()[0]).toMatchObject({ kcal: roughKcal('medium', 2000), name: '대충 입력 · 보통', source: 'rough' })
+    expect(meals()[0]).toMatchObject({ kcal: roughKcal('medium', 2000), name: '대충 기록 · 보통', source: 'rough' })
+  })
+
+  it('AI를 쓸 수 없을 때의 예시는 좁은 화면에 들어가는 길이다', () => {
+    open()
+    expect(screen.getByLabelText('음식 이름이나 칼로리')).toHaveAttribute('placeholder', '예: 550 · 김치찌개 550')
+  })
+
+  it('Tab과 Shift+Tab은 시트 안에서만 돈다', () => {
+    render(
+      <>
+        <button type="button">뒤의 화면</button>
+        <MealSheet date={today()} targetKcal={2000} onClose={onClose} />
+      </>,
+    )
+    const dialog = screen.getByRole('dialog', { name: '식사 추가' })
+    const buttons = within(dialog).getAllByRole('button')
+    const first = screen.getByRole('button', { name: '닫기' })
+    const last = buttons[buttons.length - 1]
+    expect(buttons[0]).toBe(first)
+
+    last.focus()
+    const tab = fireEvent.keyDown(document, { key: 'Tab' })
+    expect(tab).toBe(false)
+    expect(first).toHaveFocus()
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(last).toHaveFocus()
+
+    // 가운데에서는 브라우저가 하던 대로 둔다.
+    screen.getByLabelText('음식 이름이나 칼로리').focus()
+    expect(fireEvent.keyDown(document, { key: 'Tab' })).toBe(true)
+
+    // 포커스가 시트 밖에 있으면 안으로 데려온다.
+    screen.getByRole('button', { name: '뒤의 화면' }).focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(first).toHaveFocus()
   })
 
   it('닫기 버튼, Esc, 바깥 누르기로 닫힌다', () => {

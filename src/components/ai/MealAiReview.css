@@ -6,15 +6,10 @@
   line-height: 1.35;
 }
 
-/* 단계가 바뀔 때 코드로 포커스를 옮기는 자리. 키보드로 쓰는 중일 때만 옅은 테두리로 자리를 알려 준다. */
-.mealai-title:focus {
-  outline: none;
-}
-
+/* 단계가 바뀔 때 코드로 포커스를 옮기는 자리. 누를 수 있는 것이 아니므로 테두리는 그리지 않는다(빈 입력 칸처럼 보인다). */
+.mealai-title:focus,
 .mealai-title:focus-visible {
-  outline: 2px solid var(--border);
-  outline-offset: 4px;
-  border-radius: 4px;
+  outline: none;
 }
 
 /* 내가 적은 글: 왼쪽 선으로만 구분한다. */
@@ -60,7 +55,7 @@
 
 .list.mealai-items > li {
   padding: 2px 0;
-  gap: 8px;
+  gap: 12px;
 }
 
 .mealai-item-main {
@@ -200,4 +195,9 @@
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
+}
+
+/* 저장하지 못했다는 안내는 버튼 바로 위에 둔다. 목록이 길어도 보인다. */
+.mealai-footer .field-error {
+  margin: 0;
 }

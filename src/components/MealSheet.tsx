@@ -1,9 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
-import type { AiRequest, MealEstimate } from '../ai/contract'
 import { ImageError, prepareImage } from '../ai/image'
 import { useAiAvailability } from '../ai/useAiAvailability'
-import { useAiCall, type AiCallState } from '../ai/useAiCall'
 import { formatKorean } from '../lib/date'
 import { loadFoodDb, type FoodDb } from '../lib/foodDb'
 import { kcalFor, searchFoods, type IndexedFood } from '../lib/foodSearch'
@@ -11,10 +9,19 @@ import { MAX_ENTRY_KCAL, mySuggestions, parseEntry, previousDayMeals, type Sugge
 import { ROUGH_PORTIONS, roughKcal } from '../lib/selectors'
 import type { RoughSize } from '../lib/selectors'
 import { useStore } from '../store'
-import { useSync } from '../sync/store'
 import type { DateStr, MealSource } from '../types'
 import { AiConflictHint, AiLimitNote, AiLoginHint, AiQuotaLeft, AiTag } from './ai/AiBits'
 import MealAiReview, { type MealAiLogItem, type MealAiSource } from './ai/MealAiReview'
+import {
+  discardMealPhoto,
+  dismissMealText,
+  isKeptPhoto,
+  markMealAiSaved,
+  requestMealPhoto,
+  requestMealText,
+  setMealPhoto,
+  useMealAi,
+} from './ai/MealAiStore'
 import FoodAmount, { fmtAmount } from './FoodAmount'
 import { fmtKcal } from './today/format'
 import { TrashIcon } from './today/icons'
@@ -23,21 +30,14 @@ import './MealSheet.css'
 
 const ROUGH_SIZES: RoughSize[] = ['small', 'medium', 'large']
 
-type MealAiRequest = Extract<AiRequest, { task: 'meal-text' | 'meal-photo' }>
 /** AI에 보내는 글의 최대 길이. 서버가 받는 한도(500자)보다 짧게 둔다. */
 const AI_TEXT_MAX = 200
 const AI_SOURCE: MealSource = 'ai'
-/** AI를 쓸 수 있을 때, 이름 뒤 숫자가 이보다 작으면 칼로리가 아니라 양으로 본다('계란 2'). */
+/** AI를 쓸 수 있을 때, 이름 뒤 숫자가 이보다 작으면 칼로리인지 양인지 사용자가 고르게 한다('계란 2'). */
 const AI_MIN_NAMED_KCAL = 20
-
-/**
- * 마지막으로 받은 글 어림값. 같은 글을 다시 물으면 AI를 또 부르지 않고 이것을 보여 준다.
- * 시트를 닫았다 열어도 남고, 로그아웃하거나 계정이 바뀌면 지운다.
- */
-let lastTextEstimate: { text: string; data: MealEstimate } | null = null
-useSync.subscribe((s, prev) => {
-  if (s.email !== prev.email) lastTextEstimate = null
-})
+/** Tab으로 옮겨 갈 수 있는 것들. 포커스를 시트 안에 가둘 때 쓴다. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 function CameraIcon() {
   return (
@@ -78,6 +78,7 @@ function servingLabel(f: IndexedFood): string {
  *  - 비워 두면: 자주 먹는 것, 어제처럼, 대충 기록
  * AI를 쓸 수 있으면 여기에 두 가지가 더해진다: 말로 적은 식사를 어림잡기, 사진으로 어림잡기.
  * 돈이 드는 AI보다 내 기록과 음식 목록을 먼저 보여 주고, AI는 직접 눌렀을 때만 부른다.
+ * 어림잡기 요청과 결과는 MealAiStore가 맡는다. 시트를 닫거나 취소해도 보낸 요청은 끝까지 받는다.
  */
 export default function MealSheet({ date, targetKcal, onClose }: Props) {
   const meals = useStore((s) => s.meals)
@@ -94,17 +95,25 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
   const [busy, setBusy] = useState(false)
 
   const availability = useAiAvailability()
-  const aiCall = useAiCall<MealAiRequest>()
-  const [aiSource, setAiSource] = useState<MealAiSource | null>(null)
+  const textSlot = useMealAi((s) => s.text)
+  const photoSlot = useMealAi((s) => s.photo)
+  /** 지금 보고 있는 AI 단계. null이면 입력 칸이다. */
+  const [view, setView] = useState<'text' | 'photo' | null>(null)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
-  /** 다시 부르지 않고 보여 주는, 전에 받은 어림값. */
-  const [cached, setCached] = useState<MealEstimate | null>(null)
-  /** 지금 보고 있는 결과에서 이미 기록한 줄. 일부만 저장됐을 때 다시 기록해도 두 번 들어가지 않게 한다. */
-  const [savedIds, setSavedIds] = useState<number[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
-  const previewUrlRef = useRef<string | null>(null)
   const refocusInput = useRef(false)
+  const aiSlot = view === 'text' ? (textSlot?.detached ? null : textSlot) : view === 'photo' ? photoSlot : null
+  const aiSource = useMemo<MealAiSource | null>(
+    () =>
+      view === 'text' && textSlot && !textSlot.detached
+        ? { kind: 'text', text: textSlot.text }
+        : view === 'photo' && photoSlot
+          ? { kind: 'photo', ...photoSlot.image }
+          : null,
+    [view, textSlot, photoSlot],
+  )
+  const inAi = aiSource !== null
 
   const sheetRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -122,6 +131,24 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
       if (e.key === 'Escape') {
         e.stopPropagation()
         onCloseRef.current()
+        return
+      }
+      // aria-modal인 동안 Tab이 뒤의 화면으로 나가지 않게, 시트 안에서 돌게 한다.
+      const sheet = sheetRef.current
+      if (e.key !== 'Tab' || !sheet) return
+      const items = [...sheet.querySelectorAll<HTMLElement>(FOCUSABLE)]
+      if (items.length === 0) {
+        e.preventDefault()
+        sheet.focus()
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement
+      const outside = !(active instanceof Node) || !sheet.contains(active)
+      if (e.shiftKey ? outside || active === first || active === sheet : outside || active === last) {
+        e.preventDefault()
+        ;(e.shiftKey ? last : first).focus()
       }
     }
     document.addEventListener('keydown', onKey)
@@ -138,7 +165,7 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
   const minNamedKcal = aiReady ? AI_MIN_NAMED_KCAL : 0
   const entry = useMemo(() => parseEntry(query, { minNamedKcal }), [query, minNamedKcal])
   const deferredQuery = useDeferredValue(query)
-  const searchText = entry.kind === 'text' ? entry.text : entry.kind === 'named' ? entry.name : ''
+  const searchText = entry.kind === 'text' ? entry.text : entry.kind === 'named' || entry.kind === 'ambiguous' ? entry.name : ''
 
   // 음식 DB는 이름을 처음 적을 때 불러온다.
   const wantsDb = searchText !== ''
@@ -147,19 +174,27 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
+    // 다시 보여 줄 것이 없는 사진(보내지 않았거나, 실패했거나, 어제 것)은 남기지 않는다.
+    const dropLeftover = () => {
+      const photo = useMealAi.getState().photo
+      if (photo && !isKeptPhoto(photo)) discardMealPhoto()
+    }
+    dropLeftover()
     return () => {
       mounted.current = false
-      releasePreview()
+      // 기다리는 요청은 끊지 않는다. 글은 받아 두었다가 같은 글을 다시 물을 때, 사진은 시트를 다시 열 때 보여 준다.
+      dropLeftover()
+      dismissMealText()
     }
   }, [])
 
   // AI 단계에서 돌아오면 입력 칸에서 바로 이어 적을 수 있게 한다.
   useEffect(() => {
-    if (aiSource === null && refocusInput.current) {
+    if (!inAi && refocusInput.current) {
       refocusInput.current = false
       inputRef.current?.focus()
     }
-  }, [aiSource])
+  }, [inAi])
   useEffect(() => {
     // 같은 시도를 두 번 시작하지 않는다. 상태가 바뀌어도 진행 중인 요청은 취소하지 않는다.
     if (!wantsDb || dbRequested.current === dbAttempt) return
@@ -203,57 +238,50 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
     } else if (entry.kind === 'named') {
       void run(() => addMeal({ date, kcal: entry.kcal, name: entry.name, source: 'exact' }))
     } else if (aiPrimary) {
-      // Enter는 내 기록에도 음식 목록에도 없을 때만 AI로 이어진다. 찾은 것이 있으면 그쪽이 먼저다.
+      // Enter는 음식 목록을 다 불러왔고 내 기록에도 목록에도 없을 때만 AI로 이어진다. 찾은 것이 있으면 그쪽이 먼저다.
       askAi()
     }
   }
 
-  /** 적은 글을 AI에 보낸다. 방금 같은 글로 받아 둔 어림값이 있으면 다시 부르지 않는다. */
+  /**
+   * 적은 글을 AI에 보낸다. 방금 같은 글로 받아 둔 어림값이 있으면 다시 부르지 않고,
+   * 앞서 보낸 같은 글의 답을 아직 기다리는 중이면 그 요청을 이어서 본다.
+   */
   function askAi() {
-    if (entry.kind !== 'text' || !aiReady || busy || photoBusy) return
-    const source: MealAiSource = { kind: 'text', text: entry.text.slice(0, AI_TEXT_MAX) }
+    if (aiText === null || !aiReady || busy || photoBusy || waitingOther) return
     setError(null)
     setPhotoError(null)
-    setAiSource(source)
-    if (lastTextEstimate?.text === source.text) setCached(lastTextEstimate.data)
-    else sendAi(source)
+    requestMealText(aiText)
+    setView('text')
   }
 
-  function releasePreview() {
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current)
-      previewUrlRef.current = null
-    }
-  }
-
-  function sendAi(source: MealAiSource, note?: string) {
-    setCached(null)
-    setSavedIds([])
+  /** 보낸다. 실패한 뒤 다시 시도할 때도 쓴다. 사진이면 덧붙인 말을 함께 보낸다. */
+  function sendAi(note?: string) {
     setError(null)
-    if (source.kind === 'photo') {
-      void aiCall.run({ task: 'meal-photo', imageBase64: source.base64, mediaType: source.mediaType, ...(note ? { note } : {}) })
-      return
-    }
-    void aiCall.run({ task: 'meal-text', text: source.text }).then((data) => {
-      // 음식을 찾지 못한 답은 남기지 않는다. 같은 글로 한 번 더 해 볼 수 있어야 한다.
-      if (data && data.items.length > 0) lastTextEstimate = { text: source.text, data }
-    })
+    if (view === 'photo') requestMealPhoto(note)
+    else if (textSlot) requestMealText(textSlot.text)
   }
 
-  /** AI 단계를 끝내고 입력 칸으로 돌아간다. 적어 둔 글은 그대로 둔다. */
-  function closeAi() {
-    aiCall.reset()
-    releasePreview()
+  function leaveAi() {
     refocusInput.current = true
     setError(null)
-    setCached(null)
-    setAiSource(null)
+    setView(null)
   }
 
-  /** 기다리다 그만둔다. 글이면 입력 칸으로, 사진이면 보내기 전 단계로 돌아간다. */
+  /** AI 단계를 끝내고 입력 칸으로 돌아간다. 적어 둔 글은 그대로 둔다. 사진과 그 결과는 버린다. */
+  function closeAi() {
+    if (view === 'photo') discardMealPhoto()
+    else dismissMealText()
+    leaveAi()
+  }
+
+  /**
+   * 기다리다 그만두고 입력 칸으로 돌아간다. 보낸 요청은 끊지 않는다(이미 횟수에 들어갔다).
+   * 글의 답은 받아 두었다가 같은 글을 다시 물을 때, 사진의 답은 입력 칸 아래에서 이어 볼 수 있게 한다.
+   */
   function cancelAi() {
-    if (aiSource?.kind === 'photo') aiCall.reset()
-    else closeAi()
+    if (view === 'text') dismissMealText()
+    leaveAi()
   }
 
   async function onPhotoPicked(e: ChangeEvent<HTMLInputElement>) {
@@ -269,10 +297,9 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
         URL.revokeObjectURL(image.previewUrl)
         return
       }
-      releasePreview()
-      previewUrlRef.current = image.previewUrl
       setError(null)
-      setAiSource({ kind: 'photo', ...image })
+      setMealPhoto(image)
+      setView('photo')
     } catch (err) {
       if (mounted.current) {
         setPhotoError(err instanceof ImageError ? err.message : '사진을 준비하지 못했어요. 다른 사진으로 해 주세요.')
@@ -284,7 +311,8 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
 
   /** 고른 음식을 차례로 기록한다. 중간에 실패하면 저장된 줄은 목록에서 빼고, 몇 건이 저장됐는지 알린다. */
   async function logAiItems(items: MealAiLogItem[]) {
-    if (busy) return
+    if (busy || view === null) return
+    const kind = view
     setBusy(true)
     setError(null)
     const saved: number[] = []
@@ -293,9 +321,12 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
         await addMeal({ date, kcal: item.kcal, name: item.name, source: AI_SOURCE })
         saved.push(item.id)
       }
+      // 기록한 결과는 더 남겨 두지 않는다. 같은 글의 어림값은 다시 물을 때를 위해 그대로 둔다.
+      if (kind === 'photo') discardMealPhoto()
+      else dismissMealText()
       onClose()
     } catch {
-      setSavedIds((ids) => [...ids, ...saved])
+      markMealAiSaved(kind, saved)
       setError(
         saved.length > 0
           ? `${saved.length}건은 기록했고, 남은 ${items.length - saved.length}건을 저장하지 못했어요. 남은 것만 다시 기록해 주세요.`
@@ -319,7 +350,7 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
 
   function onRough(size: RoughSize) {
     const { label } = ROUGH_PORTIONS[size]
-    void run(() => addMeal({ date, kcal: roughKcal(size, targetKcal), name: `대충 입력 · ${label}`, source: 'rough' }))
+    void run(() => addMeal({ date, kcal: roughKcal(size, targetKcal), name: `대충 기록 · ${label}`, source: 'rough' }))
   }
 
   async function onRemoveFavorite(id: string) {
@@ -333,35 +364,45 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
   }
 
   const canSubmit = entry.kind === 'kcal' || entry.kind === 'named'
-  const canAskAi = aiReady && entry.kind === 'text'
+  const isText = entry.kind === 'text'
+  // 이름 뒤에 범위를 벗어난 숫자를 붙였다('회식 6000'). 검색은 하지만 Enter로 AI를 부르지는 않는다.
+  const outOfRange = entry.kind === 'text' && entry.outOfRange === true
+  /** AI에 보낼 글. 글이 아니면 null. */
+  const aiText = entry.kind === 'text' || entry.kind === 'ambiguous' ? entry.text.slice(0, AI_TEXT_MAX) : null
+  // 앞서 보낸 다른 글의 답을 아직 기다리는 중이면 새로 보내지 않는다.
+  const waitingOther = textSlot?.call.status === 'loading' && aiText !== null && textSlot.text !== aiText
+  const aiDisabled = busy || photoBusy || waitingOther
   // 음식 목록을 아직 불러오는 중이거나, 방금 적은 글의 검색이 끝나지 않았다.
-  const dbPending = entry.kind === 'text' && (dbState.status === 'idle' || dbState.status === 'loading' || deferredQuery !== query)
-  const dbHits = dbResult !== null && dbResult.items.length > 0
-  const dbNoMatch = !dbPending && dbResult !== null && dbResult.total === 0
-  const hasLocal = mine.length > 0 || dbHits
-  // 돈이 들지 않는 길이 먼저다. 찾은 것이 없을 때만 AI가 입력 칸 바로 아래 강조 버튼이 된다.
-  const aiPrimary = canAskAi && !dbPending && !hasLocal
-  const aiSecondary = canAskAi && !aiPrimary
+  const dbPending = isText && (dbState.status === 'idle' || dbState.status === 'loading' || deferredQuery !== query)
+  // 음식 목록을 실제로 다 불러와 찾아봤는데 없다. 불러오지 못했거나 불러오는 중이면 '없다'고 하지 않는다.
+  const dbNoMatch = isText && dbState.status === 'ready' && !dbPending && dbResult !== null && dbResult.total === 0
+  const noLocal = dbNoMatch && mine.length === 0
+  // 돈이 들지 않는 길이 먼저다. 목록을 다 찾아봐도 없을 때만 AI가 입력 칸 바로 아래 강조 버튼이 되고, Enter로 이어진다.
+  const aiPrimary = aiReady && noLocal && !outOfRange
+  const aiSecondary = aiReady && isText && !aiPrimary
   // AI를 쓸 수 있는데 음식 목록에 없으면, 긴 안내 대신 입력 칸 아래 한 줄로 알린다.
-  const aiNoMatch = canAskAi && dbNoMatch
-  const reviewState: AiCallState<MealEstimate> = cached ? { status: 'done', data: cached } : aiCall.state
+  const aiNoMatch = aiReady && dbNoMatch
+  // AI를 쓸 수 없고 찾은 것도 없으면, 막다른 화면이 되지 않게 대충 기록을 함께 보여 준다.
+  const showRough = entry.kind === 'empty' || (!aiReady && noLocal)
+  // 받아 둔 사진 결과(또는 아직 기다리는 사진). 기록하거나 버리기 전에는 새 사진으로 덮어쓰지 않는다.
+  const keptPhoto = isKeptPhoto(photoSlot) ? photoSlot : null
   const yesterdayKcal = yesterday.reduce((s, m) => s + m.kcal, 0)
 
   // AI로 가는 길: (글을 적었고 찾은 것이 있을 때) 어림잡기 버튼, 사진 버튼, 남은 횟수, 무엇을 보내는지 한 줄.
+  const waitingNote = waitingOther && (
+    <p className="small muted" role="status">
+      앞서 보낸 글을 어림잡는 중이에요. 끝나면 이 글도 보낼 수 있어요.
+    </p>
+  )
   const aiEntry = (
     <div className="meal-ai-entry">
       {aiSecondary && (
-        <button
-          type="button"
-          className="btn btn--block"
-          aria-label="AI로 칼로리 어림잡기"
-          disabled={busy || photoBusy}
-          onClick={askAi}
-        >
+        <button type="button" className="btn btn--block" aria-label="AI로 칼로리 어림잡기" disabled={aiDisabled} onClick={askAi}>
           <AiTag />
           칼로리 어림잡기
         </button>
       )}
+      {aiSecondary && waitingNote}
       <input
         ref={fileRef}
         className="meal-ai-file"
@@ -372,17 +413,19 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
         data-testid="meal-photo-input"
         onChange={(e) => void onPhotoPicked(e)}
       />
-      <button
-        type="button"
-        className="btn btn--block"
-        disabled={busy}
-        onClick={() => {
-          if (!photoBusy) fileRef.current?.click()
-        }}
-      >
-        <CameraIcon />
-        사진으로 어림잡기
-      </button>
+      {!keptPhoto && (
+        <button
+          type="button"
+          className="btn btn--block"
+          disabled={busy}
+          onClick={() => {
+            if (!photoBusy) fileRef.current?.click()
+          }}
+        >
+          <CameraIcon />
+          사진으로 어림잡기
+        </button>
+      )}
       {photoBusy && (
         <p className="small muted" role="status">
           사진을 준비하는 중이에요
@@ -397,13 +440,45 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
       <AiQuotaLeft />
     </div>
   )
+  // AI 버튼이 있을 자리. 쓸 수 없을 때는 같은 자리에 이유를 한 줄로 알린다.
+  const aiPlace = aiReady ? (
+    aiEntry
+  ) : availability === 'login' ? (
+    <AiLoginHint benefit="사진이나 말로 적은 식사를 AI가 어림잡아 줘요" />
+  ) : availability === 'conflict' ? (
+    <AiConflictHint />
+  ) : availability === 'limit' ? (
+    <AiLimitNote fallback="칼로리를 직접 적거나 대충 기록하는 건 그대로 할 수 있어요." />
+  ) : null
+  const roughSection = (
+    <section aria-labelledby="rough-title">
+      <h3 className="card-title" id="rough-title">
+        잘 모르겠으면 대충
+      </h3>
+      <div className="rough-grid">
+        {ROUGH_SIZES.map((size) => (
+          <button
+            key={size}
+            type="button"
+            className="rough-btn"
+            disabled={busy || roughKcal(size, targetKcal) <= 0}
+            onClick={() => onRough(size)}
+          >
+            <span className="rough-label">{ROUGH_PORTIONS[size].label}</span>
+            <span className="rough-kcal num">{fmtKcal(roughKcal(size, targetKcal))} kcal</span>
+          </button>
+        ))}
+      </div>
+      <p className="small muted entry-source">한 끼를 하루 목표의 일부로 어림잡아요. 정확하지 않아도 기록해 두는 편이 좋아요.</p>
+    </section>
+  )
 
   return (
     <div
       className="sheet-backdrop"
       onClick={(e) => {
         // AI 단계에서는 바깥을 잘못 눌러 받은 결과를 잃지 않게 한다. Esc와 닫기 버튼으로는 닫힌다.
-        if (e.target === e.currentTarget && aiSource === null) onClose()
+        if (e.target === e.currentTarget && !inAi) onClose()
       }}
     >
       <div ref={sheetRef} className="sheet meal-sheet" role="dialog" aria-modal="true" aria-label="식사 추가" tabIndex={-1}>
@@ -417,13 +492,15 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
           </button>
         </div>
 
-        {aiSource ? (
+        {aiSource && aiSlot ? (
           <MealAiReview
             source={aiSource}
-            state={reviewState}
+            state={aiSlot.call}
             busy={busy}
-            savedIds={savedIds}
-            onSend={(note) => sendAi(aiSource, note)}
+            savedIds={aiSlot.savedIds}
+            saveError={error}
+            initialNote={view === 'photo' ? photoSlot?.note : undefined}
+            onSend={sendAi}
             onCancel={cancelAi}
             onBack={closeAi}
             onLog={(items) => void logAiItems(items)}
@@ -447,7 +524,7 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
                   autoComplete="off"
                   enterKeyHint={canSubmit ? 'done' : aiPrimary ? 'go' : 'search'}
                   maxLength={aiReady ? AI_TEXT_MAX : 60}
-                  placeholder={aiReady ? '예: 550 · 김치찌개 550 · 김치찌개랑 밥 한 공기' : '예: 550 · 김치찌개 550'}
+                  placeholder={aiReady ? '예: 550 · 김치찌개랑 밥' : '예: 550 · 김치찌개 550'}
                   value={query}
                   aria-describedby="meal-entry-hint"
                   onChange={(e) => {
@@ -469,11 +546,37 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
                   type="submit"
                   className="btn btn--primary btn--block btn--lg"
                   aria-label="AI로 칼로리 어림잡기"
-                  disabled={busy || photoBusy}
+                  disabled={aiDisabled}
                 >
                   <AiTag />
                   칼로리 어림잡기
                 </button>
+              )}
+              {aiPrimary && waitingNote}
+              {/* 숫자가 칼로리인지 양인지 알 수 없다. 둘 다 보여 주고, Enter로는 어느 쪽도 하지 않는다. */}
+              {entry.kind === 'ambiguous' && (
+                <div className="meal-entry-choices">
+                  <button
+                    type="button"
+                    className="btn btn--block btn--lg"
+                    disabled={busy}
+                    data-testid="entry-as-kcal"
+                    onClick={() => void run(() => addMeal({ date, kcal: entry.kcal, name: entry.name, source: 'exact' }))}
+                  >
+                    {entry.name} · {fmtKcal(entry.kcal)} kcal 기록하기
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--block btn--lg"
+                    aria-label="AI로 칼로리 어림잡기"
+                    disabled={aiDisabled}
+                    onClick={askAi}
+                  >
+                    <AiTag />
+                    칼로리 어림잡기
+                  </button>
+                  {waitingNote}
+                </div>
               )}
 
               <p className="small muted" id="meal-entry-hint">
@@ -483,25 +586,40 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
                     : '숫자만 적으면 칼로리로 기록해요. 이름을 적으면 전에 먹은 것과 음식 목록에서 찾아요.')}
                 {entry.kind === 'kcal' && '이름을 붙이려면 김치찌개 550처럼 이름을 앞에 적어 주세요.'}
                 {entry.kind === 'named' && '한 번 기록하면 다음부터 자주 먹는 것에 떠요.'}
+                {entry.kind === 'ambiguous' && '뒤의 숫자가 칼로리인지 양인지 알 수 없어요. 맞는 쪽을 눌러 주세요.'}
                 {entry.kind === 'text' &&
                   (aiNoMatch
                     ? '음식 목록에는 없어요. AI로 어림잡거나, 칼로리를 알면 뒤에 숫자를 붙여 주세요.'
                     : '칼로리를 알면 이름 뒤에 숫자를 붙여 바로 기록할 수 있어요.')}
               </p>
-              {entry.kind === 'invalid' && (
+              {(entry.kind === 'invalid' || outOfRange) && (
                 <p className="field-error" role="alert">
                   한 번에 1~{fmtKcal(MAX_ENTRY_KCAL)} kcal까지 기록할 수 있어요.
                 </p>
               )}
             </form>
 
-            {availability === 'login' && <AiLoginHint benefit="사진이나 말로 적은 식사를 AI가 어림잡아 줘요" />}
-            {availability === 'conflict' && <AiConflictHint />}
-            {availability === 'limit' && <AiLimitNote fallback="숫자를 직접 적거나 대충 기록은 그대로 쓸 수 있어요." />}
+            {/* 돈을 들여 받은 사진 결과는 기록하거나 버릴 때까지 남겨 두고, 시트를 다시 열면 이어 볼 수 있게 한다. */}
+            {keptPhoto && (
+              <div className="meal-ai-kept" role="group" aria-label="받아 둔 사진 결과">
+                <p className="small">
+                  {keptPhoto.call.status === 'loading' ? '보낸 사진을 어림잡는 중이에요' : '방금 어림잡은 사진 결과가 있어요'}
+                </p>
+                <div className="meal-ai-kept-actions">
+                  <button type="button" className="btn" disabled={busy} onClick={() => setView('photo')}>
+                    이어서 보기
+                  </button>
+                  {keptPhoto.call.status !== 'loading' && (
+                    <button type="button" className="btn btn--ghost" disabled={busy} onClick={discardMealPhoto}>
+                      버리기
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
-            {/* 글을 적는 중에는 내 기록과 음식 목록이 먼저 나오고, AI와 사진은 그 뒤에 온다. */}
-            {aiReady && entry.kind !== 'text' && aiEntry}
-
+            {/* 글을 적는 중에는 내 기록과 음식 목록이 먼저 나오고, AI와 사진(또는 쓸 수 없는 이유)은 그 뒤에 온다. */}
+            {!isText && aiPlace}
 
             {mine.length > 0 && (
               <section aria-labelledby="mine-title">
@@ -575,10 +693,7 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
                   </div>
                 )}
                 {dbResult && dbResult.total === 0 && (
-                  <p className="small muted">
-                    '{searchText}'에 맞는 음식이 없어요. 포장 가공식품은 들어 있지 않아요. 칼로리를 알면 이름 뒤에
-                    숫자를 붙여 주세요.
-                  </p>
+                  <p className="small muted">'{searchText}'에 맞는 음식이 없어요. 포장 가공식품은 들어 있지 않아요.</p>
                 )}
                 {dbResult && dbResult.items.length > 0 && (
                   <>
@@ -606,43 +721,19 @@ export default function MealSheet({ date, targetKcal, onClose }: Props) {
               </section>
             )}
 
-            {aiReady && entry.kind === 'text' && aiEntry}
+            {isText && aiPlace}
 
-            {entry.kind === 'empty' && (
-              <>
-                {yesterday.length > 0 && !todayHasMeals && (
-                  <button type="button" className="btn btn--block" disabled={busy} onClick={logYesterday}>
-                    전날 먹은 {yesterday.length}건 그대로 기록 · {fmtKcal(yesterdayKcal)} kcal
-                  </button>
-                )}
-                <section aria-labelledby="rough-title">
-                  <h3 className="card-title" id="rough-title">
-                    잘 모르겠으면 대충
-                  </h3>
-                  <div className="rough-grid">
-                    {ROUGH_SIZES.map((size) => (
-                      <button
-                        key={size}
-                        type="button"
-                        className="rough-btn"
-                        disabled={busy || roughKcal(size, targetKcal) <= 0}
-                        onClick={() => onRough(size)}
-                      >
-                        <span className="rough-label">{ROUGH_PORTIONS[size].label}</span>
-                        <span className="rough-kcal num">{fmtKcal(roughKcal(size, targetKcal))} kcal</span>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="small muted entry-source">
-                    한 끼를 하루 목표의 일부로 어림잡아요. 정확하지 않아도 기록해 두는 편이 좋아요.
-                  </p>
-                </section>
-              </>
+            {entry.kind === 'empty' && yesterday.length > 0 && !todayHasMeals && (
+              <button type="button" className="btn btn--block" disabled={busy} onClick={logYesterday}>
+                전날 먹은 {yesterday.length}건 그대로 기록 · {fmtKcal(yesterdayKcal)} kcal
+              </button>
             )}
+            {showRough && roughSection}
           </>
         )}
 
-        {error && (
+        {/* AI 결과를 기록하다 난 오류는 그 화면의 기록 버튼 위에 보여 준다. */}
+        {error && !inAi && (
           <p className="field-error" role="alert">
             {error}
           </p>

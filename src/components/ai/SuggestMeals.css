@@ -26,7 +26,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -92,9 +92,10 @@
   align-items: flex-start;
 }
 
-/* 기록이 바뀌기 전의 추천은 글만 흐리게 한다. 기록 버튼은 그대로 누를 수 있다. */
-.suggest-list.is-stale .suggest-item {
-  opacity: 0.6;
+/* 기록이 바뀌기 전의 추천은 이름만 한 단계 낮춘다. 칼로리와 이유는 그대로 읽히고, 기록 버튼도 그대로 누를 수 있다. */
+.suggest-list.is-stale .suggest-name {
+  color: var(--text-2);
+  font-weight: 400;
 }
 
 /* 이름, 칼로리, 이유를 한 줄씩 쌓아 칼로리 자리가 줄마다 달라지지 않게 한다. */
@@ -108,6 +109,29 @@
 
 .suggest-name {
   font-weight: 600;
+}
+
+/* 답이 도착하면 초점이 옮겨 오는 자리 */
+.suggest-name:focus-visible,
+.suggest-note:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 늘 그려 두는 자리라, 비어 있을 때는 간격이 두 번 들어가지 않게 당긴다. */
+.suggest-status:empty {
+  margin-top: -12px;
+}
+
+/* 초점을 잃지 않게 disabled 대신 aria-disabled로 막은 버튼. 모양은 .btn:disabled와 같다. */
+.suggest .btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.suggest .btn[aria-disabled='true']:active {
+  transform: none;
 }
 
 .suggest-kcal {

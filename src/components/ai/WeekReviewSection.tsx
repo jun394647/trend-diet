@@ -42,7 +42,9 @@ export default function WeekReviewSection({ date, recommendation }: { date: Date
   }
 
   // 실패 안내에 '다시 시도'나 로그인 링크가 있으면 같은 자리에 버튼을 하나 더 두지 않는다.
-  const errorHasAction = error !== null && (isRetryable(error) || error.code === 'unauthorized')
+  // 횟수를 다 썼을 때는 횟수 안내만 보여 준다. 앞서 남은 실패 안내를 그 곁에 두지 않는다.
+  const shownError = ai === 'limit' ? null : error
+  const errorHasAction = shownError !== null && (isRetryable(shownError) || shownError.code === 'unauthorized')
 
   return (
     <section className="card week-review" aria-labelledby="week-review-title">
@@ -51,54 +53,17 @@ export default function WeekReviewSection({ date, recommendation }: { date: Date
       </h2>
 
       {ai === 'login' ? (
-        <AiLoginHint benefit="AI가 지난 2주를 돌아봐 줘요" />
+        <AiLoginHint benefit="AI가 최근 2주를 돌아봐 줘요" />
       ) : (
         <div className="week-review-body">
-          {!review && (
-            <p className="small muted">최근 2주 기록을 읽고, 잘된 점과 해 볼 만한 한 가지를 짧게 적어요.</p>
+          {!review && (ai !== 'limit' || pending) && (
+            <p className="small muted">기본 정보와 최근 2주 기록을 AI에 보내, 잘된 점과 해 볼 만한 한 가지를 짧게 받아요.</p>
           )}
 
-          {/* 기다리는 말과 결과를 같은 자리에서 알린다. 늘 그려 두어야 화면 낭독기가 바뀐 내용을 읽는다. */}
+          {/* 기다리는 말만 알리는 자리. 늘 그려 두어야 화면 낭독기가 새로 들어온 글을 읽는다. */}
+          {/* 결과는 이 밖에 두고 초점을 옮겨 알린다. 안에 두면 초점과 알림으로 두 번 읽힌다. */}
           <div className="week-review-status" role="status">
-            {review ? (
-              <div className="week-review-result" data-testid="week-review">
-                <p className="week-review-headline" ref={headlineRef} tabIndex={-1}>
-                  {review.headline}
-                </p>
-                {review.wins.length > 0 && (
-                  <div>
-                    <h3 className="week-review-sub" id="week-review-wins">
-                      잘된 점
-                    </h3>
-                    <ul className="week-review-list" aria-labelledby="week-review-wins">
-                      {review.wins.map((w, i) => (
-                        <li key={i}>{w}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {review.observations.length > 0 && (
-                  <div>
-                    <h3 className="week-review-sub" id="week-review-obs">
-                      눈에 띄는 점
-                    </h3>
-                    <ul className="week-review-list" aria-labelledby="week-review-obs">
-                      {review.observations.map((o, i) => (
-                        <li key={i}>{o}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {review.nextStep && (
-                  <div className="week-review-next">
-                    <h3 className="week-review-sub">해 볼 만한 한 가지</h3>
-                    <p>{review.nextStep}</p>
-                  </div>
-                )}
-                <AiDisclaimer>AI가 최근 2주 기록을 읽고 쓴 글이라 실제와 다를 수 있어요. 의학적 조언은 아니에요.</AiDisclaimer>
-              </div>
-            ) : pending ? (
-              // AiLoading과 같은 모양. 이 자리가 이미 role="status"라 한 번만 읽히도록 역할은 겹쳐 두지 않는다.
+            {!review && pending && (
               <p className="ai-loading week-review-wait">
                 <span className="ai-loading-dots" aria-hidden="true">
                   <span />
@@ -107,17 +72,57 @@ export default function WeekReviewSection({ date, recommendation }: { date: Date
                 </span>
                 최근 2주를 돌아보는 중이에요
               </p>
-            ) : null}
+            )}
           </div>
+
+          {review && (
+            <div className="week-review-result" data-testid="week-review">
+              <p className="week-review-headline" ref={headlineRef} tabIndex={-1}>
+                {review.headline}
+              </p>
+              {review.wins.length > 0 && (
+                <div>
+                  <h3 className="week-review-sub" id="week-review-wins">
+                    잘된 점
+                  </h3>
+                  <ul className="week-review-list" aria-labelledby="week-review-wins">
+                    {review.wins.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {review.observations.length > 0 && (
+                <div>
+                  <h3 className="week-review-sub" id="week-review-obs">
+                    눈에 띄는 점
+                  </h3>
+                  <ul className="week-review-list" aria-labelledby="week-review-obs">
+                    {review.observations.map((o, i) => (
+                      <li key={i}>{o}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {review.nextStep && (
+                <div className="week-review-next">
+                  <h3 className="week-review-sub">해 볼 만한 한 가지</h3>
+                  <p>{review.nextStep}</p>
+                </div>
+              )}
+              <AiDisclaimer>AI가 최근 2주 기록을 읽고 쓴 글이라 실제와 다를 수 있어요. 의학적 조언은 아니에요.</AiDisclaimer>
+            </div>
+          )}
 
           {!review && !pending && (
             <>
-              {error !== null && <AiErrorNote error={error} onRetry={ai === 'ready' ? ask : undefined} />}
+              {shownError !== null && <AiErrorNote error={shownError} onRetry={ai === 'ready' ? ask : undefined} />}
               {ai === 'conflict' && <AiConflictHint />}
               {ai === 'limit' && <AiLimitNote fallback="아래에서 다음 한 주는 그대로 정할 수 있어요." />}
               {ai === 'ready' && !errorHasAction && (
-                <button type="button" className="btn week-review-ask" onClick={ask}>
-                  <AiTag /> 돌아보기 받기
+                // 구획 제목에 이미 AI 표시가 있어 버튼 안에는 두지 않고, 읽어 주는 이름에만 밝힌다.
+                <button type="button" className="btn week-review-ask" aria-label="AI로 최근 2주 돌아보기" onClick={ask}>
+                  최근 2주 돌아보기
                 </button>
               )}
               {ai === 'ready' && <AiQuotaLeft />}

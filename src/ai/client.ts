@@ -22,13 +22,13 @@ export function aiErrorMessage(code: AiErrorCode | 'offline', usage?: AiUsage): 
     case 'forbidden':
       return '이 계정은 AI 기능을 쓸 수 없어요.'
     case 'limit':
-      return `오늘 쓸 수 있는 AI 횟수${usage ? `(${usage.limit}회)` : ''}를 다 썼어요. 내일 다시 쓸 수 있어요.`
+      return `오늘 AI 횟수${usage ? `(${usage.limit}번)` : ''}를 다 썼어요. 내일 다시 쓸 수 있어요.`
     case 'bad_request':
       return '보낸 내용을 읽지 못했어요. 글을 줄이거나 다른 사진으로 다시 해 주세요.'
     case 'refused':
       return '이번에는 답을 받지 못했어요. 내용을 바꿔서 다시 해 주세요.'
     case 'busy':
-      return '지금 응답이 늦어요. 잠시 뒤에 다시 해 주세요.'
+      return '응답이 늦어져 받지 못했어요. 다시 해 볼 수 있어요.'
     case 'offline':
       return '인터넷에 연결되어 있지 않아요. 연결된 뒤에 다시 해 주세요.'
     case 'failed':
@@ -38,10 +38,19 @@ export function aiErrorMessage(code: AiErrorCode | 'offline', usage?: AiUsage): 
 
 const ENDPOINT = '/api/ai'
 
-/** 서버에 API 키가 들어 있는지 확인한다. 확인하지 못하면 준비되지 않은 것으로 본다. */
+/**
+ * 서버에 API 키가 들어 있는지 확인한다. 확인하지 못하면 준비되지 않은 것으로 본다.
+ * 로그인해 있으면 토큰을 함께 보내, 오늘 이미 쓴 횟수(used)도 받아 온다.
+ */
 export async function fetchAiStatus(): Promise<AiStatus> {
   try {
-    const res = await fetch(ENDPOINT, { method: 'GET' })
+    let token: string | undefined
+    try {
+      token = supabase ? (await supabase.auth.getSession()).data.session?.access_token : undefined
+    } catch {
+      token = undefined
+    }
+    const res = await fetch(ENDPOINT, { method: 'GET', ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}) })
     if (!res.ok) return { configured: false, dailyLimit: 0 }
     return (await res.json()) as AiStatus
   } catch {

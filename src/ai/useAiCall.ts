@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AiError, callAi } from './client'
 import type { AiRequest, AiResultMap } from './contract'
+import { useSync } from '../sync/store'
 import { useAi } from './store'
 
 export type AiCallState<T> =
@@ -25,15 +26,26 @@ export function useAiCall<R extends AiRequest>() {
     const controller = new AbortController()
     abortRef.current = controller
     setState({ status: 'loading' })
+    // 사용량은 계정마다 다르다. 기다리는 사이에 계정이 바뀌면 받은 값을 새 계정에 쓰지 않는다.
+    const email = useSync.getState().email
+    const sameAccount = () => useSync.getState().email === email
     try {
       const { result, usage } = await callAi(request, controller.signal)
       if (controller.signal.aborted) return null
+      if (!sameAccount()) {
+        setState({ status: 'idle' })
+        return null
+      }
       useAi.getState().setUsage(usage)
       setState({ status: 'done', data: result })
       return result
     } catch (e) {
       if (controller.signal.aborted) return null
       const error = e instanceof AiError ? e : new AiError('failed')
+      if (!sameAccount()) {
+        setState({ status: 'idle' })
+        return null
+      }
       if (error.usage) useAi.getState().setUsage(error.usage)
       if (error.code === 'forbidden') useAi.getState().setForbidden()
       setState({ status: 'error', error })

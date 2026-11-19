@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { AiError, callAi } from '../ai/client'
+import { AiError, aiErrorMessage, callAi } from '../ai/client'
 import { useAi } from '../ai/store'
 import App from '../App'
 import { AI_TIMEOUT_MS } from '../components/ai/CoachCall'
@@ -31,6 +31,9 @@ const profile: Profile = {
 const mockCall = vi.mocked(callAi)
 const answer = (text: string, used = 1) => ({ result: { answer: text }, usage: { used, limit: 40 } })
 const startersName = '이런 걸 물어볼 수 있어요. 누르면 입력 칸에 들어가요.'
+const busyText = aiErrorMessage('busy')
+const limitNote = /오늘 AI 횟수를 다 썼어요/
+const sendButton = () => screen.getByRole('button', { name: '보내기' })
 
 function signIn() {
   useAi.setState({ configured: true, checked: true })
@@ -95,7 +98,7 @@ describe('Coach', () => {
     signIn()
     renderCoach()
     expect(
-      screen.getByText('코치는 내 기본 정보와 최근 2주의 체중·섭취 기록, 지금 계획을 AI에 보내 답을 받아요.'),
+      screen.getByText('코치는 내 기본 정보와 최근 2주의 체중·식사 기록, 지금 계획을 AI에 보내 답을 받아요.'),
     ).toBeInTheDocument()
     expect(screen.getByText(startersName)).toBeVisible()
     const starters = screen.getByRole('list', { name: startersName })
@@ -103,8 +106,12 @@ describe('Coach', () => {
     expect(within(starters).getByRole('button', { name: '지금 감량 속도가 저한테 맞는 걸까요?' })).toBeInTheDocument()
     expect(within(starters).getByRole('button', { name: '어제 많이 먹었는데 괜찮을까요?' })).toBeInTheDocument()
     expect(screen.getByText(/의학적 조언이 아니에요/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '보내기' })).toBeDisabled()
+    // 화살표 같은 그림 없이 글만 있는 버튼이다(누르면 이동하는 줄처럼 보이지 않게).
+    expect(starters.querySelector('svg')).toBeNull()
+    expect(sendButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(sendButton()).toBeEnabled()
     expect(screen.queryByRole('button', { name: '대화 지우기' })).not.toBeInTheDocument()
+    expect(screen.queryByText('대화는 앱을 새로 열면 지워져요.')).not.toBeInTheDocument()
     const log = screen.getByRole('log', { name: '대화' })
     expect(log).toHaveAttribute('aria-live', 'polite')
     expect(log).toBeEmptyDOMElement()
@@ -157,9 +164,11 @@ describe('Coach', () => {
     expect(within(log).queryByRole('status')).not.toBeInTheDocument()
     expect(input()).toHaveValue('')
     type('다음 질문')
-    expect(screen.getByRole('button', { name: '보내기' })).toBeDisabled()
+    expect(sendButton()).toHaveAttribute('aria-disabled', 'true')
     fireEvent.keyDown(input(), { key: 'Enter' })
+    fireEvent.click(sendButton())
     expect(mockCall).toHaveBeenCalledTimes(1)
+    expect(screen.getAllByTestId('coach-msg-user')).toHaveLength(1)
     type('')
 
     release(answer('그날은 편하게 드세요.\n한 주 평균으로 보면 돼요.', 3))
@@ -185,7 +194,7 @@ describe('Coach', () => {
       ],
     })
     expect(screen.getAllByTestId('coach-msg-user')).toHaveLength(2)
-    expect(screen.getByText('오늘 8번 남았어요')).toBeInTheDocument()
+    expect(within(screen.getByTestId('coach-meta')).getByText(/8번/)).toBeInTheDocument()
   })
 
   it('Shift+Enter와 한글 조합 중의 Enter는 보내지 않는다', () => {
@@ -232,7 +241,7 @@ describe('Coach', () => {
     renderCoach()
     sendText('왜 체중이 안 줄죠?')
 
-    const note = await screen.findByText(/지금 응답이 늦어요/)
+    const note = await screen.findByText(busyText)
     expect(note.closest('li')).toHaveClass('coach-msg--coach')
     // 대화 자리가 이미 바뀐 내용을 읽어 주므로, 안에 alert를 또 두지 않는다.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -241,7 +250,7 @@ describe('Coach', () => {
     fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
     expect(await screen.findByTestId('coach-msg-coach')).toHaveTextContent('물이 차서 그럴 수 있어요.')
     expect(screen.getAllByTestId('coach-msg-user')).toHaveLength(1)
-    expect(screen.queryByText(/지금 응답이 늦어요/)).not.toBeInTheDocument()
+    expect(screen.queryByText(busyText)).not.toBeInTheDocument()
     expect(mockCall).toHaveBeenCalledTimes(2)
     expect(mockCall.mock.calls[1][0]).toMatchObject({ question: '왜 체중이 안 줄죠?', history: [] })
   })
@@ -259,7 +268,7 @@ describe('Coach', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000)
     })
-    expect(screen.getByTestId('coach-msg-wait')).toHaveTextContent('지금 응답이 늦어요')
+    expect(screen.getByTestId('coach-msg-wait')).toHaveTextContent(busyText)
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
     expect(mockCall.mock.calls[0][1]?.aborted).toBe(true)
   })
@@ -276,17 +285,47 @@ describe('Coach', () => {
     expect(screen.getByTestId('coach-msg-user')).toHaveTextContent('질문 하나')
     expect(screen.getByTestId('coach-msg-coach')).toHaveTextContent('네.')
 
-    fireEvent.click(screen.getByRole('button', { name: '대화 지우기' }))
+    expect(screen.getByText('대화는 앱을 새로 열면 지워져요.')).toBeInTheDocument()
+    const clear = screen.getByRole('button', { name: '대화 지우기' })
+    fireEvent.click(clear)
     expect(screen.getByText('대화를 지우고 새로 시작할까요?')).toBeInTheDocument()
+    expect(clear).toHaveAttribute('aria-expanded', 'true')
     fireEvent.click(screen.getByRole('button', { name: '취소' }))
     expect(screen.queryByText('대화를 지우고 새로 시작할까요?')).not.toBeInTheDocument()
     expect(screen.getByTestId('coach-msg-user')).toBeInTheDocument()
+    // 취소하면 초점이 '대화 지우기'로 돌아온다. 그 버튼은 초점을 받을 수 있는 상태여야 한다.
+    expect(clear).toBeEnabled()
+    expect(clear).toHaveFocus()
 
-    fireEvent.click(screen.getByRole('button', { name: '대화 지우기' }))
+    fireEvent.click(clear)
     fireEvent.click(screen.getByRole('button', { name: '지우기' }))
     expect(screen.queryByTestId('coach-msg-user')).not.toBeInTheDocument()
     expect(screen.getByRole('list', { name: startersName })).toBeInTheDocument()
     expect(screen.queryByText('대화를 지우고 새로 시작할까요?')).not.toBeInTheDocument()
+    expect(screen.queryByText('대화는 앱을 새로 열면 지워져요.')).not.toBeInTheDocument()
+    expect(input()).toHaveFocus()
+  })
+
+  it('시작 질문은 이미 적어 둔 글을 덮어쓰지 않고 다음 줄에 덧붙인다', () => {
+    signIn()
+    renderCoach()
+    type('요즘 야식을 자주 먹어요. ')
+    fireEvent.click(screen.getByRole('button', { name: '어제 많이 먹었는데 괜찮을까요?' }))
+    expect(input()).toHaveValue('요즘 야식을 자주 먹어요.\n어제 많이 먹었는데 괜찮을까요?')
+    expect(input()).toHaveFocus()
+    expect(mockCall).not.toHaveBeenCalled()
+  })
+
+  it('보낸 뒤에도 보내기 버튼은 초점을 잃지 않는다(disabled가 되지 않는다)', async () => {
+    signIn()
+    mockCall.mockImplementationOnce(() => new Promise(() => {}))
+    renderCoach()
+    type('질문 하나')
+    sendButton().focus()
+    fireEvent.click(sendButton())
+    expect(sendButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(sendButton()).toBeEnabled()
+    expect(sendButton()).toHaveFocus()
   })
 
   it('답을 기다리는 중에는 대화를 지울 수 없다', () => {
@@ -294,7 +333,11 @@ describe('Coach', () => {
     mockCall.mockImplementationOnce(() => new Promise(() => {}))
     renderCoach()
     sendText('질문 하나')
-    expect(screen.getByRole('button', { name: '대화 지우기' })).toBeDisabled()
+    const clear = screen.getByRole('button', { name: '대화 지우기' })
+    expect(clear).toHaveAttribute('aria-disabled', 'true')
+    expect(clear).toBeEnabled()
+    fireEvent.click(clear)
+    expect(screen.queryByText('대화를 지우고 새로 시작할까요?')).not.toBeInTheDocument()
     act(() => useCoach.getState().clear())
     expect(screen.getByTestId('coach-msg-user')).toBeInTheDocument()
     expect(useCoach.getState().pending).toBe(true)
@@ -345,16 +388,115 @@ describe('Coach', () => {
     expect(input()).toHaveValue('적다 만 질문')
   })
 
-  it('오늘 횟수를 다 썼으면 보내기를 막고 0번이라는 말 대신 안내를 보여 준다', () => {
+  it('오늘 횟수를 다 썼으면 입력 칸과 보내기를 막고, 시작 질문 없이 안내를 보여 준다', () => {
     signIn()
     useAi.setState({ usage: { used: 40, limit: 40 }, usageDate: today() })
+    act(() => useCoach.getState().setDraft('적어 둔 질문'))
     renderCoach()
-    type('질문')
-    expect(screen.getByRole('button', { name: '보내기' })).toBeDisabled()
+    expect(input()).toBeDisabled()
+    expect(input()).toHaveAttribute('placeholder', '내일 다시 물어볼 수 있어요')
+    expect(sendButton()).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(sendButton())
     fireEvent.keyDown(input(), { key: 'Enter' })
     expect(mockCall).not.toHaveBeenCalled()
-    expect(screen.getByText(/오늘 AI 횟수를 다 썼어요/)).toBeInTheDocument()
+    expect(screen.queryByTestId('coach-msg-user')).not.toBeInTheDocument()
+    expect(screen.getByText(limitNote)).toBeInTheDocument()
     expect(screen.queryByText(/0번/)).not.toBeInTheDocument()
+    expect(screen.queryByText(startersName)).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: startersName })).not.toBeInTheDocument()
+    // 무엇을 AI에 보내는지는 그대로 알려 준다.
+    expect(screen.getByText(/AI에 보내 답을 받아요/)).toBeInTheDocument()
+  })
+
+  it('횟수를 다 썼다는 실패는 실패로 남기지 않고, 횟수 안내 하나만 보여 준다', async () => {
+    signIn()
+    mockCall.mockRejectedValueOnce(new AiError('limit', { used: 40, limit: 40 }))
+    renderCoach()
+    sendText('질문 하나')
+    await waitFor(() => expect(useCoach.getState().pending).toBe(false))
+    expect(useCoach.getState().error).toBeNull()
+    expect(screen.getAllByText(limitNote)).toHaveLength(1)
+    expect(screen.queryByTestId('coach-msg-wait')).not.toBeInTheDocument()
+    // 보낸 질문은 대화에 남아 있다.
+    expect(screen.getByTestId('coach-msg-user')).toHaveTextContent('질문 하나')
+  })
+
+  it('실패 안내가 남아 있을 때 횟수를 다 쓰면, 실패 안내와 다시 시도는 감추고 횟수 안내만 보여 준다', async () => {
+    signIn()
+    mockCall.mockRejectedValueOnce(new AiError('busy'))
+    renderCoach()
+    sendText('질문 하나')
+    expect(await screen.findByText(busyText)).toBeInTheDocument()
+
+    // 다른 화면의 AI 기능으로 남은 횟수를 다 썼다.
+    act(() => useAi.getState().setUsage({ used: 40, limit: 40 }))
+    expect(screen.queryByText(busyText)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
+    expect(screen.getAllByText(limitNote)).toHaveLength(1)
+  })
+
+  it('횟수를 다 쓴 상태에서 대화를 지우면 막힌 입력 칸 대신 제목으로 초점을 옮긴다', async () => {
+    signIn()
+    mockCall.mockResolvedValueOnce(answer('네.', 40))
+    renderCoach()
+    sendText('질문 하나')
+    await screen.findByTestId('coach-msg-coach')
+    expect(input()).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '대화 지우기' }))
+    fireEvent.click(screen.getByRole('button', { name: '지우기' }))
+    expect(screen.queryByTestId('coach-msg-user')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '코치' })).toHaveFocus()
+  })
+
+  it('로그인이 풀려 실패하면 설정에서 로그인하는 링크를 보여 준다', async () => {
+    signIn()
+    mockCall.mockRejectedValueOnce(new AiError('unauthorized'))
+    renderCoach()
+    sendText('질문 하나')
+    expect(await screen.findByRole('link', { name: '설정에서 로그인' })).toHaveAttribute('href', '/settings')
+  })
+
+  it('대화하던 중에 이 계정은 쓸 수 없다는 답이 오면 홈으로 보내지 않고 그 자리에서 알린다', async () => {
+    signIn()
+    mockCall.mockRejectedValueOnce(new AiError('forbidden'))
+    const { unmount } = renderCoach()
+    sendText('질문 하나')
+    expect(await screen.findByRole('alert')).toHaveTextContent('이 계정은 AI 기능을 쓸 수 없어요.')
+    expect(screen.queryByText('홈 화면')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '오늘 화면으로 가기' })).toHaveAttribute('href', '/')
+    expect(screen.queryByLabelText('코치에게 물어볼 내용')).not.toBeInTheDocument()
+    unmount()
+
+    // 한 번 알린 뒤 다시 들어오면 처음부터 쓸 수 없는 것과 같이 홈으로 보낸다.
+    renderCoach()
+    expect(screen.getByText('홈 화면')).toBeInTheDocument()
+  })
+
+  it('답을 기다리는 사이에 계정이 바뀌면 앞 계정의 사용량과 사용 불가 표시를 새 계정에 남기지 않는다', async () => {
+    signIn()
+    let release: (v: ReturnType<typeof answer>) => void = () => {}
+    let fail: (e: unknown) => void = () => {}
+    mockCall
+      .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+      .mockImplementationOnce(() => new Promise((_, reject) => (fail = reject)))
+    const context = { today: today() } as Parameters<ReturnType<typeof useCoach.getState>['send']>[0]
+
+    act(() => useCoach.getState().send(context, '질문 하나'))
+    act(() => useSync.setState({ email: 'other@b.c' }))
+    await act(async () => {
+      release(answer('앞 계정의 답', 40))
+    })
+    expect(useAi.getState().usage).toBeNull()
+    expect(useCoach.getState().messages).toEqual([])
+
+    act(() => useCoach.getState().send(context, '질문 둘'))
+    act(() => useSync.setState({ email: 'third@b.c' }))
+    await act(async () => {
+      fail(new AiError('forbidden', { used: 40, limit: 40 }))
+    })
+    expect(useAi.getState().forbidden).toBe(false)
+    expect(useAi.getState().usage).toBeNull()
+    expect(useCoach.getState()).toMatchObject({ messages: [], error: null, pending: false })
   })
 
   it('로그아웃하거나 계정이 바뀌면 대화와 적던 글을 지우고, 늦게 온 답도 넣지 않는다', async () => {
@@ -418,6 +560,8 @@ describe('Coach', () => {
     expect(screen.queryByTestId('coach-counter')).not.toBeInTheDocument()
     type('가'.repeat(480))
     expect(screen.getByTestId('coach-counter')).toHaveTextContent('480/500')
+    // 낱글자 span의 aria-label은 화면 낭독기가 읽지 않는다. 보이는 글만 둔다.
+    expect(screen.getByTestId('coach-counter')).not.toHaveAttribute('aria-label')
     expect(input()).toHaveAttribute('maxlength', '500')
   })
 

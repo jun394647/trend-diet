@@ -26,6 +26,10 @@ interface Props {
   busy: boolean
   /** 이미 기록한 줄의 id. 일부만 저장된 뒤 다시 기록할 때 두 번 들어가지 않게 목록에서 뺀다. */
   savedIds?: readonly number[]
+  /** 기록을 저장하지 못했을 때의 안내. 기록 버튼 바로 위에 보여 준다. */
+  saveError?: string | null
+  /** 사진과 함께 이미 보낸 덧붙인 말. 시트를 닫았다 열어도 다시 시도할 때 같은 말을 보낸다. */
+  initialNote?: string
   /** AI에 보낸다. 사진이면 덧붙인 말을 함께 넘긴다. 다시 시도할 때도 쓴다. */
   onSend: (note?: string) => void
   /** 기다리는 중에 그만둔다. */
@@ -40,8 +44,19 @@ interface Props {
  *  - 사진이면 먼저 덧붙일 말을 받고, 확인한 뒤에야 보낸다.
  *  - 결과가 오면 음식별로 고치거나 뺀 뒤 한 번에 기록한다.
  */
-export default function MealAiReview({ source, state, busy, savedIds = NO_IDS, onSend, onCancel, onBack, onLog }: Props) {
-  const [note, setNote] = useState('')
+export default function MealAiReview({
+  source,
+  state,
+  busy,
+  savedIds = NO_IDS,
+  saveError = null,
+  initialNote = '',
+  onSend,
+  onCancel,
+  onBack,
+  onLog,
+}: Props) {
+  const [note, setNote] = useState(initialNote)
   const titleRef = useRef<HTMLHeadingElement>(null)
   const isPhoto = source.kind === 'photo'
   const backLabel = isPhoto ? '돌아가기' : '다시 적기'
@@ -104,10 +119,8 @@ export default function MealAiReview({ source, state, busy, savedIds = NO_IDS, o
               onChange={(e) => setNote(e.target.value)}
             />
           </div>
-          <button type="submit" className="btn btn--primary btn--block btn--lg mealai-go">
-            <span aria-hidden="true">
-              <AiTag />
-            </span>
+          <button type="submit" className="btn btn--primary btn--block btn--lg mealai-go" aria-label="AI로 칼로리 어림잡기">
+            <AiTag />
             칼로리 어림잡기
           </button>
           <p className="small muted">어림잡기를 누르면 이 사진을 AI에 보내요. 누르기 전에는 보내지 않아요.</p>
@@ -123,7 +136,7 @@ export default function MealAiReview({ source, state, busy, savedIds = NO_IDS, o
           <button type="button" className="btn btn--ghost btn--block" onClick={onCancel}>
             취소
           </button>
-          <p className="small muted mealai-cancel-note">취소해도 이번 한 번은 쓴 것으로 세요.</p>
+          <p className="small muted mealai-cancel-note">취소해도 오늘 횟수에서 한 번이 줄어요.</p>
         </>
       )}
 
@@ -151,7 +164,16 @@ export default function MealAiReview({ source, state, busy, savedIds = NO_IDS, o
       )}
 
       {state.status === 'done' && !empty && (
-        <ResultForm data={state.data} busy={busy} savedIds={savedIds} backLabel={backLabel} onBack={onBack} onLog={onLog} />
+        <ResultForm
+          data={state.data}
+          busy={busy}
+          savedIds={savedIds}
+          saveError={saveError}
+          // 사진 결과는 돌아가면 사라진다. 버튼에서 그렇게 말해 둔다.
+          backLabel={isPhoto ? '결과 버리고 돌아가기' : backLabel}
+          onBack={onBack}
+          onLog={onLog}
+        />
       )}
     </section>
   )
@@ -192,12 +214,13 @@ interface ResultProps {
   data: MealEstimate
   busy: boolean
   savedIds: readonly number[]
+  saveError: string | null
   backLabel: string
   onBack: () => void
   onLog: (items: MealAiLogItem[]) => void
 }
 
-function ResultForm({ data, busy, savedIds, backLabel, onBack, onLog }: ResultProps) {
+function ResultForm({ data, busy, savedIds, saveError, backLabel, onBack, onLog }: ResultProps) {
   const [allRows, setRows] = useState(() => toRows(data))
   // 이미 기록한 줄은 목록에서 뺀다. 다시 기록해도 두 번 들어가지 않는다.
   const rows = allRows.filter((r) => !savedIds.includes(r.id))
@@ -275,8 +298,10 @@ function ResultForm({ data, busy, savedIds, backLabel, onBack, onLog }: ResultPr
       )}
 
       {note && <p className="mealai-note">{note}</p>}
+      {/* 기록하기 전에 읽히도록 버튼 위에 둔다. */}
+      <AiDisclaimer>실제와 다를 수 있어요. 숫자를 눌러 고칠 수 있어요.</AiDisclaimer>
 
-      {/* 합계와 기록 버튼은 목록이 길어도 늘 보이게 시트 아래에 붙여 둔다. */}
+      {/* 합계와 기록 버튼은 목록이 길어도 늘 보이게 시트 아래에 붙여 둔다. 저장하지 못했다는 안내도 여기에 둔다. */}
       <div className="mealai-footer">
         <div className="mealai-total">
           <span className="muted">기록할 칼로리</span>
@@ -285,6 +310,11 @@ function ResultForm({ data, busy, savedIds, backLabel, onBack, onLog }: ResultPr
             <span className="unit">kcal</span>
           </span>
         </div>
+        {saveError && (
+          <p className="field-error" role="alert">
+            {saveError}
+          </p>
+        )}
         <button
           type="submit"
           className="btn btn--primary btn--block btn--lg"
@@ -293,7 +323,6 @@ function ResultForm({ data, busy, savedIds, backLabel, onBack, onLog }: ResultPr
           {included.length === 0 ? '기록할 음식을 골라 주세요' : `${included.length}건 기록하기`}
         </button>
       </div>
-      <AiDisclaimer>실제와 다를 수 있어요. 숫자를 눌러 고칠 수 있어요.</AiDisclaimer>
       <button type="button" className="btn btn--ghost btn--block" onClick={onBack}>
         {backLabel}
       </button>

@@ -211,3 +211,29 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* 받아 둔 사진 결과: 왼쪽 선으로만 구분하고, 이어 보기와 버리기를 나란히 둔다. */
+.meal-ai-kept {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent);
+}
+
+.meal-ai-kept-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.meal-ai-kept-actions > .btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* 숫자가 칼로리인지 양인지 고르는 두 버튼 */
+.meal-entry-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

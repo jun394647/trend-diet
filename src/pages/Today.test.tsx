@@ -1,12 +1,12 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { addDays, formatKorean, today } from '../lib/date'
 import { roughKcal } from '../lib/selectors'
 import { useStore } from '../store'
 import type { Profile } from '../types'
-import { AiError, callAi } from '../ai/client'
+import { AiError, aiErrorMessage, callAi } from '../ai/client'
 import { useAi } from '../ai/store'
-import { resetSuggest, useSuggest } from '../components/ai/SuggestStore'
+import { requestSuggestions, resetSuggest, useSuggest } from '../components/ai/SuggestStore'
 import { useSync } from '../sync/store'
 import Today from './Today'
 
@@ -75,7 +75,7 @@ describe('Today', () => {
 
     const expected = roughKcal('medium', target())
     await waitFor(() => expect(screen.getByTestId('kcal-eaten')).toHaveTextContent(fmt(expected)))
-    expect(screen.getByText('대충 입력 · 보통')).toBeInTheDocument()
+    expect(screen.getByText('대충 기록 · 보통')).toBeInTheDocument()
   })
 
   it('자주 먹는 것은 시트를 열지 않고 한 번 눌러 기록한다', async () => {
@@ -224,6 +224,9 @@ describe('Today · AI 식사 추천', () => {
   }
   const reply = (r: typeof result, used = 1) => ({ result: r, usage: { used, limit: 40 } })
   const toggleName = /남은 양에 맞는 식사 추천/
+  const busyText = aiErrorMessage('busy')
+  const staleNote = '기록이 바뀌기 전에 받은 추천이라 지금 남은 양과 다를 수 있어요.'
+  const limitNote = /오늘 AI 횟수를 다 썼어요/
 
   function signIn() {
     useAi.setState({ configured: true, checked: true })
@@ -290,8 +293,8 @@ describe('Today · AI 식사 추천', () => {
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(region).toBeVisible()
-    expect(screen.getByText('오늘 기록과 최근 2주 기록을 AI에 보내요.')).toBeInTheDocument()
-    expect(screen.getByLabelText('바라는 점 (안 적어도 돼요)')).toBeInTheDocument()
+    expect(screen.getByText('기본 정보와 최근 2주의 체중·식사 기록, 지금 계획을 AI에 보내요.')).toBeInTheDocument()
+    expect(screen.getByLabelText('바라는 점 (안 적어도 돼요)')).toHaveAttribute('placeholder', '예: 편의점, 따뜻한 것')
   })
 
   it('펼쳐서 요청하기 전에는 호출하지 않고, 추천을 누르면 AI 식사로 기록한다', async () => {
@@ -326,11 +329,126 @@ describe('Today · AI 식사 추천', () => {
       source: 'ai',
     })
     expect(screen.getByTestId('kcal-eaten')).toHaveTextContent('480')
-    expect(await within(list).findByRole('button', { name: '김치찌개와 밥 반 공기 480 kcal 기록함' })).toBeDisabled()
-    expect(within(list).getByRole('button', { name: '닭가슴살 샐러드 350 kcal 기록' })).toBeEnabled()
+    // 누른 버튼은 '기록함'으로 바뀌어도 초점을 받을 수 있다(disabled가 아니라 aria-disabled).
+    const done = await within(list).findByRole('button', { name: '김치찌개와 밥 반 공기 480 kcal 기록함' })
+    expect(done).toHaveAttribute('aria-disabled', 'true')
+    expect(done).toBeEnabled()
+    expect(within(list).getByRole('button', { name: '닭가슴살 샐러드 350 kcal 기록' })).toHaveAttribute('aria-disabled', 'false')
     // 추천을 눌러 기록한 것은 예상한 변화라, 남은 추천을 '바뀌기 전'이라고 하지 않는다.
-    expect(screen.queryByText('기록이 바뀌기 전의 추천이에요.')).not.toBeInTheDocument()
+    expect(screen.queryByText(staleNote)).not.toBeInTheDocument()
     expect(list).not.toHaveClass('is-stale')
+    // AI의 한마디는 요청할 때의 남은 양을 말하므로, 하나라도 기록한 뒤에는 보여 주지 않는다.
+    expect(screen.queryByText('남은 양은 어림잡은 값이에요.')).not.toBeInTheDocument()
+
+    // '기록함'을 또 눌러도 한 번 더 기록하지 않는다.
+    fireEvent.click(done)
+    await act(async () => {})
+    expect(useStore.getState().meals).toHaveLength(1)
+  })
+
+  it('기록한 추천의 식사를 지우면 다시 기록할 수 있고, AI의 한마디도 돌아온다', async () => {
+    signIn()
+    renderToday()
+    const list = await openAndAsk()
+    fireEvent.click(within(list).getByRole('button', { name: '닭가슴살 샐러드 350 kcal 기록' }))
+    await within(list).findByRole('button', { name: '닭가슴살 샐러드 350 kcal 기록함' })
+
+    // 식사 기록 목록에서 그 식사를 지운다.
+    fireEvent.click(screen.getByRole('button', { name: '닭가슴살 샐러드 350 kcal 삭제' }))
+    const again = await within(list).findByRole('button', { name: '닭가슴살 샐러드 350 kcal 기록' })
+    expect(again).toHaveAttribute('aria-disabled', 'false')
+    expect(useStore.getState().meals).toHaveLength(0)
+    // 요청할 때와 같은 상태로 돌아왔으니 바뀌기 전의 추천이 아니고, 한마디도 다시 맞는 말이다.
+    expect(list).not.toHaveClass('is-stale')
+    expect(screen.queryByText(staleNote)).not.toBeInTheDocument()
+    expect(screen.getByText('남은 양은 어림잡은 값이에요.')).toBeInTheDocument()
+
+    fireEvent.click(again)
+    await within(list).findByRole('button', { name: '닭가슴살 샐러드 350 kcal 기록함' })
+    expect(useStore.getState().meals).toHaveLength(1)
+    expect(mockCall).toHaveBeenCalledTimes(1)
+  })
+
+  it('기다리는 말은 늘 그려 둔 자리 하나에서 알리고, 답이 오면 첫 추천으로 초점을 옮긴다', async () => {
+    signIn()
+    let release: (v: ReturnType<typeof reply>) => void = () => {}
+    mockCall.mockReset()
+    mockCall.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+    renderToday()
+    fireEvent.click(screen.getByRole('button', { name: toggleName }))
+    const status = screen.getByRole('status')
+    expect(status).toBeEmptyDOMElement()
+
+    const submit = screen.getByRole('button', { name: '추천 받기' })
+    submit.focus()
+    fireEvent.click(submit)
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(status).toHaveTextContent('남은 양에 맞는 식사를 찾는 중이에요')
+    // 기다리는 동안에도 누른 버튼은 초점을 잃지 않고, 또 눌러도 한 번만 호출한다.
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toBeEnabled()
+    expect(submit).toHaveFocus()
+    fireEvent.click(submit)
+    expect(mockCall).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      release(reply(result))
+    })
+    const list = screen.getByRole('list', { name: '추천 식사' })
+    expect(status).toBeEmptyDOMElement()
+    expect(status).not.toContainElement(list)
+    expect(within(list).getByText('닭가슴살 샐러드')).toHaveFocus()
+  })
+
+  it('맞는 추천이 없이 답이 오면 안내 문장으로 초점을 옮긴다', async () => {
+    signIn()
+    mockCall.mockReset()
+    mockCall.mockResolvedValueOnce(reply({ suggestions: [], note: '남은 양이 아주 적어요.' }))
+    renderToday()
+    fireEvent.click(screen.getByRole('button', { name: toggleName }))
+    fireEvent.click(screen.getByRole('button', { name: '추천 받기' }))
+    await waitFor(() => expect(screen.getByText('남은 양이 아주 적어요.')).toHaveFocus())
+  })
+
+  it('기다리는 동안 다른 곳을 쓰고 있었으면 초점을 빼앗지 않는다', async () => {
+    signIn()
+    renderToday()
+    fireEvent.click(screen.getByRole('button', { name: toggleName }))
+    fireEvent.click(screen.getByRole('button', { name: '추천 받기' }))
+    const elsewhere = screen.getByRole('button', { name: '식사 추가' })
+    elsewhere.focus()
+    await screen.findByRole('list', { name: '추천 식사' })
+    expect(elsewhere).toHaveFocus()
+  })
+
+  it('자정을 넘겨 어제의 요청이 아직 기다리는 중이어도 오늘의 요청은 바로 보내고, 어제 답은 버린다', async () => {
+    signIn()
+    let releaseOld: (v: ReturnType<typeof reply>) => void = () => {}
+    mockCall.mockReset()
+    mockCall
+      .mockImplementationOnce(() => new Promise((resolve) => (releaseOld = resolve)))
+      .mockResolvedValueOnce(reply({ suggestions: [{ name: '두부 덮밥', kcal: 420, why: '든든해요.' }], note: '' }))
+    const yesterday = addDays(today(), -1)
+    const context = { today: yesterday, todayKcal: 0 } as Parameters<typeof requestSuggestions>[1]
+    void requestSuggestions(yesterday, context)
+    expect(useSuggest.getState()).toMatchObject({ date: yesterday, pending: true })
+
+    renderToday()
+    fireEvent.click(screen.getByRole('button', { name: toggleName }))
+    // 오늘 화면에서는 기다리는 중으로 보이지 않고, 누르면 바로 요청한다.
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
+    const submit = screen.getByRole('button', { name: '추천 받기' })
+    expect(submit).toHaveAttribute('aria-disabled', 'false')
+    fireEvent.click(submit)
+    expect(mockCall).toHaveBeenCalledTimes(2)
+    expect(await screen.findByText('두부 덮밥')).toBeInTheDocument()
+
+    await act(async () => {
+      releaseOld(reply(result))
+    })
+    expect(useSuggest.getState()).toMatchObject({ date: today(), pending: false })
+    expect(useSuggest.getState().rows).toHaveLength(1)
+    expect(screen.queryByText('닭가슴살 샐러드')).not.toBeInTheDocument()
   })
 
   it('기록을 빠르게 두 번 눌러도 한 번만 기록한다', async () => {
@@ -398,8 +516,10 @@ describe('Today · AI 식사 추천', () => {
     renderToday()
     const list = await openAndAsk()
     await useStore.getState().addMeal({ date: today(), kcal: 200, name: '간식', source: 'exact' })
-    expect(await screen.findByText('기록이 바뀌기 전의 추천이에요.')).toBeInTheDocument()
+    expect(await screen.findByText(staleNote)).toBeInTheDocument()
     expect(list).toHaveClass('is-stale')
+    // 흐려져도 기록 버튼은 그대로 누를 수 있다.
+    expect(within(list).getByRole('button', { name: '닭가슴살 샐러드 350 kcal 기록' })).toHaveAttribute('aria-disabled', 'false')
     expect(mockCall).toHaveBeenCalledTimes(1)
   })
 
@@ -458,7 +578,7 @@ describe('Today · AI 식사 추천', () => {
     renderToday()
     fireEvent.click(screen.getByRole('button', { name: toggleName }))
     fireEvent.click(screen.getByRole('button', { name: '추천 받기' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('지금 응답이 늦어요')
+    expect(await screen.findByRole('alert')).toHaveTextContent(busyText)
     expect(screen.queryByRole('button', { name: '추천 받기' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
@@ -467,13 +587,46 @@ describe('Today · AI 식사 추천', () => {
     expect(screen.getByRole('button', { name: '다른 추천 받기' })).toBeInTheDocument()
   })
 
+  it('횟수를 다 썼다는 실패는 실패로 남기지 않고, 횟수 안내 하나만 보여 준다', async () => {
+    signIn()
+    mockCall.mockReset()
+    mockCall.mockRejectedValueOnce(new AiError('limit', { used: 40, limit: 40 }))
+    renderToday()
+    fireEvent.click(screen.getByRole('button', { name: toggleName }))
+    fireEvent.click(screen.getByRole('button', { name: '추천 받기' }))
+    expect(await screen.findByText(limitNote)).toBeInTheDocument()
+    expect(screen.getAllByText(limitNote)).toHaveLength(1)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(useSuggest.getState().error).toBeNull()
+    expect(screen.queryByRole('button', { name: '추천 받기' })).not.toBeInTheDocument()
+  })
+
+  it('실패 안내가 남아 있을 때 횟수를 다 쓰면, 받아 둔 추천과 횟수 안내만 보여 준다', async () => {
+    signIn()
+    mockCall.mockReset()
+    mockCall.mockResolvedValueOnce(reply(result)).mockRejectedValueOnce(new AiError('busy'))
+    renderToday()
+    await openAndAsk()
+    fireEvent.click(screen.getByRole('button', { name: '다른 추천 받기' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(busyText)
+
+    // 다른 AI 기능으로 남은 횟수를 다 썼다.
+    act(() => useAi.getState().setUsage({ used: 40, limit: 40 }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(busyText)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
+    expect(screen.getAllByText(limitNote)).toHaveLength(1)
+    expect(screen.getByRole('list', { name: '추천 식사' })).toBeInTheDocument()
+  })
+
   it('남은 횟수가 적으면 버튼 가까이에 알려 준다', async () => {
     signIn()
     mockCall.mockReset()
     mockCall.mockResolvedValue(reply(result, 35))
     renderToday()
     await openAndAsk()
-    expect(screen.getByText('오늘 5번 남았어요')).toBeInTheDocument()
+    const form = screen.getByRole('button', { name: '다른 추천 받기' }).closest('form')!
+    expect(within(form).getByText(/5번/)).toBeInTheDocument()
   })
 
   it('오늘 이미 범위를 넘었으면 추천을 권하지 않는다', async () => {

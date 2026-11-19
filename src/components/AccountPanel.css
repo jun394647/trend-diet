@@ -21,3 +21,17 @@
   flex-direction: column;
   gap: 6px;
 }
+
+.acc-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.acc-or::before,
+.acc-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}

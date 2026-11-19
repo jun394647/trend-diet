@@ -51,6 +51,7 @@ function ConflictChoice() {
 function AuthForm() {
   const signIn = useSync((s) => s.signIn)
   const signUp = useSync((s) => s.signUp)
+  const signInWithGoogle = useSync((s) => s.signInWithGoogle)
   const [mode, setMode] = useState<'in' | 'up'>('in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -82,6 +83,31 @@ function AuthForm() {
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
+      <button
+        type="button"
+        className="btn btn--block acc-google"
+        disabled={busy}
+        onClick={() => {
+          setError(null)
+          setBusy(true)
+          // 성공하면 구글 화면으로 넘어가므로 실패했을 때만 여기로 돌아온다.
+          signInWithGoogle().catch((err: unknown) => {
+            setError(err instanceof Error ? err.message : '요청을 처리하지 못했어요.')
+            setBusy(false)
+          })
+        }}
+      >
+        <svg viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
+          <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z" />
+          <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z" />
+          <path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z" />
+          <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z" />
+        </svg>
+        Google로 계속하기
+      </button>
+      <p className="acc-or small muted" aria-hidden="true">
+        또는 이메일로
+      </p>
       <div className="segmented" role="group" aria-label="로그인 또는 가입">
         <button type="button" aria-pressed={mode === 'in'} onClick={() => setMode('in')}>
           로그인

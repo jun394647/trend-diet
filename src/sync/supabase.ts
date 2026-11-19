@@ -5,7 +5,10 @@ const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 /** 서버 설정이 없으면 null. 그때 앱은 기기 저장만으로 동작한다. */
-export const supabase: SupabaseClient | null = url && key ? createClient(url, key) : null
+// 구글 로그인에서 돌아올 때 토큰을 주소의 # 뒤가 아니라 ?code= 로 받는다(PKCE).
+// 이 앱은 화면 이동에 # 를 쓰기 때문에 # 뒤로 받으면 서로 충돌한다.
+export const supabase: SupabaseClient | null =
+  url && key ? createClient(url, key, { auth: { flowType: 'pkce' } }) : null
 
 const PAGE = 1000
 const CHUNK = 500

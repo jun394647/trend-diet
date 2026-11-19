@@ -22,6 +22,8 @@ export interface SyncState {
   signIn: (email: string, password: string) => Promise<void>
   /** 가입한다. 메일 확인이 필요하면 'confirm'을 돌려준다. */
   signUp: (email: string, password: string) => Promise<'signed-in' | 'confirm'>
+  /** 구글 로그인 화면으로 이동한다. 로그인하면 이 앱으로 돌아오고, start()가 이어받는다. */
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
   resolveConflict: (choice: LinkChoice) => Promise<void>
   syncNow: () => Promise<void>
@@ -148,6 +150,15 @@ export const useSync = create<SyncState>((set, get) => {
       if (!data.session || !data.user) return 'confirm'
       await attach(data.user.id, data.user.email ?? email)
       return 'signed-in'
+    },
+
+    signInWithGoogle: async () => {
+      if (!supabase) return
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}${window.location.pathname}` },
+      })
+      if (error) throw new Error(authErrorMessage(error.message))
     },
 
     signOut: async () => {

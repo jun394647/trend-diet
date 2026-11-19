@@ -4,7 +4,8 @@ project_id = "trend-diet"
 
 [auth]
 site_url = "https://trend-diet.vercel.app"
-additional_redirect_urls = ["http://localhost:5173"]
+# 구글 로그인 뒤에 돌아올 수 있는 주소
+additional_redirect_urls = ["https://trend-diet.vercel.app/**", "http://localhost:5173/**", "http://localhost:4317/**"]
 
 [auth.email]
 # 개인용 앱이라 메일 확인 없이 가입 즉시 로그인되게 한다.

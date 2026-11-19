@@ -70,8 +70,8 @@ describe('buildParams', () => {
     }
   })
 
-  it('effort는 가벼운 일에 low, 돌아보기와 질문에 medium이다', () => {
-    expect(EFFORT).toEqual({ 'meal-text': 'low', 'meal-photo': 'low', suggest: 'low', 'week-review': 'medium', ask: 'medium', nudge: 'low' })
+  it('effort는 모든 task에서 low다(프로덕션 비교에서 질이 같고 훨씬 빨랐다)', () => {
+    expect(EFFORT).toEqual({ 'meal-text': 'low', 'meal-photo': 'low', suggest: 'low', 'week-review': 'low', ask: 'low', nudge: 'low' })
   })
 
   it('상한(max_tokens)은 task마다 다르고, 프로덕션에서 잰 출력(최대 880토큰)의 몇 배다', () => {
@@ -132,12 +132,14 @@ describe('task별 설정', () => {
     expect(Object.keys(MODEL_RULES)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'])
   })
 
-  it('fast mode는 기본으로 쓰지 않고, 켜도 받는 모델에만 보낸다', () => {
+  it('사람이 기다리는 task는 fast mode를 쓰고, 배경 작업(nudge)은 쓰지 않는다. 켜도 받는 모델에만 보낸다', () => {
     const req = sampleRequests.ask
-    for (const task of Object.keys(TASK_DEFAULTS) as ModelTask[]) expect(TASK_DEFAULTS[task].speed).toBe('standard')
-    expect(buildParams(req)).not.toHaveProperty('speed')
-    expect(taskConfig('ask', { AI_SPEED_ASK: 'fast' }).speed).toBe('fast')
-    expect(taskConfig('ask', { AI_SPEED_ASK: 'turbo' }).speed).toBe('standard')
+    for (const task of ['meal-text', 'meal-photo', 'suggest', 'week-review', 'ask'] as ModelTask[]) expect(TASK_DEFAULTS[task].speed).toBe('fast')
+    expect(TASK_DEFAULTS.nudge.speed).toBe('standard')
+    expect((buildParams(req) as unknown as Record<string, unknown>).speed).toBe('fast')
+    expect(taskConfig('ask', { AI_SPEED_ASK: 'standard' }).speed).toBe('standard')
+    expect(taskConfig('ask', { AI_SPEED_ASK: 'turbo' }).speed).toBe('fast')
+    expect(buildParams(req, { ...TASK_DEFAULTS.ask, speed: 'standard' })).not.toHaveProperty('speed')
     const fast = (model: ModelId) => buildParams(req, { ...TASK_DEFAULTS.ask, model, speed: 'fast' }) as unknown as Record<string, unknown>
     expect(fast('claude-opus-5-5').speed).toBe('fast')
     expect(fast('claude-sonnet-5-5')).not.toHaveProperty('speed')
@@ -220,8 +222,9 @@ describe('createCallModel: 조금씩 받기', () => {
 
   it('onPartial이 없거나 조금씩 받을 수 없는 task면 한 덩어리로 받는다', async () => {
     const stream = vi.fn<StreamFn>(fakeStream(['{}']))
-    const parse = vi.fn<ParseFn>(async ({ output_config }) =>
-      reply({ parsed_output: (output_config as { effort: string }).effort === 'low' ? sampleResults.suggest : sampleResults.ask }),
+    // ask와 suggest는 effort가 같아서 상한(max_tokens)으로 어느 요청인지 가른다.
+    const parse = vi.fn<ParseFn>(async ({ max_tokens }) =>
+      reply({ parsed_output: max_tokens === TASK_DEFAULTS.suggest.maxTokens ? sampleResults.suggest : sampleResults.ask }),
     )
     const call = createCallModel(parse, stream)
     expect((await call({ request: sampleRequests.ask, userId: 'u' })).ok).toBe(true)
@@ -445,7 +448,7 @@ describe('실제 SDK 클라이언트로 조금씩 받기(네트워크는 가짜)
     expect(body).toMatchObject({ stream: true, model: MODEL, max_tokens: TASK_DEFAULTS.ask.maxTokens, fallbacks: 'default' })
     expect(body).not.toHaveProperty('betas')
     expect(body).not.toHaveProperty('thinking')
-    expect(body.output_config.effort).toBe('medium')
+    expect(body.output_config.effort).toBe(TASK_DEFAULTS.ask.effort)
     expect(Object.keys(body.output_config.format).sort()).toEqual(['schema', 'type'])
   })
 

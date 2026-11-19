@@ -70,19 +70,25 @@ export const MODEL: ModelId = 'claude-opus-5-5'
 /**
  * task별 기본 설정. 모델·effort를 바꿀 때는 여기 한 곳만 고친다.
  *
- * 지금은 모든 task가 예전과 같은 모델과 effort를 쓴다. 더 빠른 모델(claude-haiku-5-5, claude-sonnet-5-5)이나
- * 낮은 effort로 바꾸는 것은 scripts/ai-eval 의 비교에서 품질이 그대로일 때만 한다. 비교 결과와 바꾼 이유는
- * scripts/ai-eval/RESULTS.md 에 적는다. 배포 환경에서는 코드를 고치지 않고 환경변수로 바꿔 볼 수 있다(taskConfig).
+ * 사람이 기다리는 task는 fast 모드(같은 모델이 더 빨리 쓴다, 값은 두 배)를 쓰고, 코치와 돌아보기는 effort를 low로 낮췄다.
+ * 2026-11-19 프로덕션에서 같은 입력으로 task마다 2번씩 비교한 결과(서버 로그 기준):
+ *   ask          첫 글자 약 6.9초 → 1.5~1.8초, 전체 10~12초 → 3~6초
+ *   week-review  첫 글자 8~13초 → 1.5초, 전체 12~16초 → 3초 안팎
+ *   meal-text    약 4초 → 약 2초
+ *   suggest      약 15초 → 약 6초
+ * 답을 나란히 읽어 보면 항목, kcal, 숫자 인용, 말투, 권하는 방향이 같은 수준이었다. 더 작은 모델로는 아직 비교하지 않았다.
+ * 배경에서 도는 nudge(디스코드 예약 메시지)는 기다리는 사람이 없어 standard로 둔다.
+ * 배포 환경에서는 코드를 고치지 않고 환경변수로 바꿔 볼 수 있다(taskConfig).
  *
- * maxTokens는 프로덕션에서 잰 출력(생각하기 포함 93~880토큰)의 몇 배로 잡은 상한이다.
+ * maxTokens는 프로덕션에서 잰 출력(생각하기 포함 93~1,160토큰)의 몇 배로 잡은 상한이다.
  */
 export const TASK_DEFAULTS: Record<ModelTask, TaskConfig> = {
-  'meal-text': { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'standard' },
-  'meal-photo': { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'standard' },
-  suggest: { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'standard' },
-  'week-review': { model: MODEL, effort: 'medium', maxTokens: 8000, thinking: 'on', cacheSystem: false, speed: 'standard' },
+  'meal-text': { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'fast' },
+  'meal-photo': { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'fast' },
+  suggest: { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'fast' },
+  'week-review': { model: MODEL, effort: 'low', maxTokens: 8000, thinking: 'on', cacheSystem: false, speed: 'fast' },
   // 코치와는 몇 분 안에 이어서 묻는 일이 많아, 두 번째 질문부터 시스템 프롬프트를 캐시에서 읽는다.
-  ask: { model: MODEL, effort: 'medium', maxTokens: 8000, thinking: 'on', cacheSystem: true, speed: 'standard' },
+  ask: { model: MODEL, effort: 'low', maxTokens: 8000, thinking: 'on', cacheSystem: true, speed: 'fast' },
   nudge: { model: MODEL, effort: 'low', maxTokens: 4000, thinking: 'on', cacheSystem: false, speed: 'standard' },
 }
 
